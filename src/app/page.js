@@ -134,14 +134,17 @@ export default function LandingPage() {
           </button>
 
           <div className="hidden md:flex items-center gap-4">
+            {/* Bouton Connexion */}
             <Link
-              href="/dashboard"
+              href="/auth/login"
               className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold border border-slate-500/20 hover:bg-slate-500/10 transition-all text-xs uppercase tracking-widest"
             >
               <LogIn size={16} /> Connexion
             </Link>
+
+            {/* Bouton Inscription */}
             <Link
-              href="/dashboard"
+              href="/auth/signup"
               className="flex items-center gap-2 px-6 py-2.5 rounded-full font-black bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-xl shadow-blue-500/20 hover:scale-105 active:scale-95 transition-all text-xs uppercase tracking-widest"
             >
               <UserPlus size={16} /> Inscription
@@ -185,13 +188,13 @@ export default function LandingPage() {
             </a>
             <div className="w-full flex flex-col gap-4 pt-4 border-t border-white/10">
               <Link
-                href="/dashboard"
+                href="/auth/login"
                 className={`w-full text-center py-4 rounded-2xl font-bold border ${isDarkMode ? "border-white/10" : "border-slate-200"}`}
               >
                 Connexion
               </Link>
               <Link
-                href="/dashboard"
+                href="/auth/signup"
                 className="w-full text-center py-4 rounded-2xl bg-cyan-500 text-white font-black"
               >
                 S'inscrire
@@ -237,7 +240,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-wrap gap-6 pt-4">
               <Link
-                href="/dashboard"
+                href="/auth/signup"
                 className="px-10 py-5 rounded-full  bg-[#00D9FF] text-white shadow-2xl hover:scale-105 transition-all flex items-center gap-3 group"
               >
                 Démarrer gratuitement{" "}
@@ -260,8 +263,8 @@ export default function LandingPage() {
           </div>
         </div>
       </header>
-
-      {/* --- LOGO STRIP SOFT --- */}
+      
+      {/* ... Le reste du code (Logo strip, why, services, etc.) reste identique */}
       <div
         className={`py-12 border-y transition-colors ${isDarkMode ? "bg-white/[0.02] border-white/5" : "bg-white border-slate-100 shadow-sm"}`}
       >
@@ -332,7 +335,6 @@ export default function LandingPage() {
         id="services"
         className="py-32 px-[8%] max-w-7xl mx-auto space-y-40"
       >
-        {/* Introduction */}
         <div className="text-left lg:text-center mb-32 space-y-4">
           <h2 className="text-4xl md:text-6xl font-black tracking-tighter italic">
             L'Art de la Gestion.
@@ -343,7 +345,6 @@ export default function LandingPage() {
           </p>
         </div>
 
-        {/* 1. Plan de Salle (Texte Gauche, Image Droite) */}
         <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
           <div className="flex-1 space-y-8 text-left">
             <div className="w-16 h-16 rounded-3xl bg-cyan-500/10 flex items-center justify-center text-cyan-500">
@@ -380,7 +381,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* 2. Suivi des Commandes (Image Gauche, Texte Droit) */}
         <div className="flex flex-col lg:flex-row-reverse items-center gap-16 lg:gap-24">
           <div className="flex-1 space-y-8 text-left">
             <div className="w-16 h-16 rounded-3xl bg-orange-500/10 flex items-center justify-center text-orange-500">
@@ -417,7 +417,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* 3. Caisse & Paiements Mobiles (Texte Gauche, Image Droite) */}
         <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
           <div className="flex-1 space-y-8 text-left">
             <div className="w-16 h-16 rounded-3xl bg-purple-500/10 flex items-center justify-center text-purple-500">
@@ -454,7 +453,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* 4. Analytique (Image Gauche, Texte Droit) */}
         <div className="flex flex-col lg:flex-row-reverse items-center gap-16 lg:gap-24">
           <div className="flex-1 space-y-8 text-left">
             <div className="w-16 h-16 rounded-3xl bg-blue-500/10 flex items-center justify-center text-blue-500">
@@ -491,7 +489,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* 5. RH & Dépenses Hors-Stock (Texte Gauche, Image Droite) */}
         <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
           <div className="flex-1 space-y-8 text-left">
             <div className="w-16 h-16 rounded-3xl bg-red-500/10 flex items-center justify-center text-red-500">
@@ -501,7 +498,7 @@ export default function LandingPage() {
               RH & Charges Fixes
             </h3>
             <p className="text-lg opacity-50 font-light leading-relaxed italic">
-              Gérez votre capital humain et vos dépenses opérationnelles. Suivez
+              Géret votre capital humain et vos dépenses opérationnelles. Suivez
               les performances de votre personnel et maîtrisez vos coûts fixes
               (loyer, énergie).
             </p>
@@ -534,7 +531,6 @@ export default function LandingPage() {
         <div
           className={`max-w-6xl mx-auto rounded-[60px] p-12 md:p-24 relative overflow-hidden text-center border ${isDarkMode ? "bg-[#0a0a0a] border-white/5" : "bg-white border-slate-200 shadow-2xl"}`}
         >
-          {/* Effets de lumière en arrière-plan */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-cyan-500/10 to-transparent opacity-50 pointer-events-none"></div>
           <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-purple-500/10 blur-[120px] rounded-full"></div>
           <div className="absolute -top-24 -left-24 w-96 h-96 bg-cyan-500/10 blur-[120px] rounded-full"></div>
@@ -552,9 +548,12 @@ export default function LandingPage() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6 pt-6">
-              <button className="w-full sm:w-auto px-12 py-6 bg-[#00D9FF] text-black rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all">
+              <Link
+                href="/auth/signup"
+                className="w-full sm:w-auto px-12 py-6 bg-[#00D9FF] text-black rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all text-center"
+              >
                 Démarrer l'expérience
-              </button>
+              </Link>
 
               <button
                 className={`w-full sm:w-auto px-12 py-6 rounded-2xl border font-black text-xs uppercase tracking-[0.2em] transition-all hover:bg-white/5 ${isDarkMode ? "border-white/10 text-white" : "border-slate-200 text-slate-900"}`}

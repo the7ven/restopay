@@ -30,8 +30,13 @@ export default function CashierTabContent({ isDarkMode, setActiveTab }) {
   const fetchCashierData = async () => {
     try {
       setLoading(true);
-      let query = supabase.from('transactions').select('*');
-      let expQuery = supabase.from('expenses').select('*');
+      
+      // 1. Récupération de l'utilisateur connecté pour l'isolation
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      let query = supabase.from('transactions').select('*').eq('restaurant_id', user.id);
+      let expQuery = supabase.from('expenses').select('*').eq('restaurant_id', user.id);
 
       const now = new Date();
       let startStr;
@@ -114,7 +119,7 @@ export default function CashierTabContent({ isDarkMode, setActiveTab }) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 no-print">
-        <div className="xl:col-span-2 space-y-8">
+        <div className="xl:col-span-2 space-y-8 text-left">
           
           {/* CARTE CHIFFRE D'AFFAIRES PRINCIPALE */}
           <div className={`p-10 rounded-[45px] border relative overflow-hidden group ${isDarkMode ? 'bg-[#0a0a0a] border-[#00D9FF]/20' : 'bg-white border-cyan-100 shadow-xl'}`}>
@@ -131,7 +136,7 @@ export default function CashierTabContent({ isDarkMode, setActiveTab }) {
                    <div className="p-3 rounded-2xl bg-green-500 text-white shadow-lg shadow-green-500/20">
                       <TrendingUp size={24} />
                    </div>
-                   <div>
+                   <div className="text-left">
                       <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>Solde Net en Caisse</p>
                       <h3 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-green-900'}`}>{netCash.toLocaleString()} F</h3>
                    </div>
@@ -146,21 +151,21 @@ export default function CashierTabContent({ isDarkMode, setActiveTab }) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-white/5">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-green-500/10 text-green-500"><Banknote size={16} /></div>
-                  <div>
+                  <div className="text-left">
                     <p className="text-[8px] uppercase font-black opacity-40">Espèces</p>
                     <p className="text-sm font-black">{(totalsByMethod['Espèces'] || 0).toLocaleString()} F</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-orange-500/10 text-orange-500"><Smartphone size={16} /></div>
-                  <div>
+                  <div className="text-left">
                     <p className="text-[8px] uppercase font-black opacity-40">Orange Money</p>
                     <p className="text-sm font-black">{(totalsByMethod['Orange Money'] || 0).toLocaleString()} F</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500"><CreditCard size={16} /></div>
-                  <div>
+                  <div className="text-left">
                     <p className="text-[8px] uppercase font-black opacity-40">Wave</p>
                     <p className="text-sm font-black">{(totalsByMethod['Wave'] || 0).toLocaleString()} F</p>
                   </div>
@@ -210,7 +215,7 @@ export default function CashierTabContent({ isDarkMode, setActiveTab }) {
         <div className={`p-8 rounded-[40px] border flex flex-col ${isDarkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
           <div className="flex items-center gap-3 mb-8 text-left">
             <div className="p-3 rounded-2xl bg-[#00D9FF]/10 text-[#00D9FF]"><History size={20} /></div>
-            <div>
+            <div className="text-left">
               <h4 className="text-lg font-black italic tracking-tighter uppercase">Ventes Live</h4>
               <p className="text-[9px] uppercase font-black opacity-30 tracking-widest">Flux entrant</p>
             </div>
@@ -240,114 +245,58 @@ export default function CashierTabContent({ isDarkMode, setActiveTab }) {
         </div>
       </div>
 
-        {showReceipt && selectedOrder && (
-
+      {showReceipt && selectedOrder && (
         <ReceiptModal
-
           isDarkMode={isDarkMode}
-
           order={{
-
             id: selectedOrder.id,
-
             items: selectedOrder.items || [],
-
             total: selectedOrder.amount,
-
             method: selectedOrder.payment_method,
-
             table: selectedOrder.table_number
-
           }}
-
           onClose={() => setShowReceipt(false)}
-
         />
-
       )}
-
     </div>
-
   );
-
 }
-
-
 
 function ReceiptModal({ isDarkMode, order, onClose }) {
-
   return (
-
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print text-left">
-
       <div className="w-full max-w-sm">
-
         <div className={`p-8 rounded-[40px] overflow-hidden ${isDarkMode ? 'bg-[#111] border border-white/5' : 'bg-white shadow-2xl'}`}>
-
           <div className="text-center border-b border-dashed border-gray-500/20 pb-6 mb-6">
-
             <h4 className="text-xl font-black italic tracking-tighter uppercase">RestoPay Luxe</h4>
-
             <p className="text-[9px] opacity-40 font-bold uppercase tracking-widest mt-1">Transaction ID: {order.id.slice(0,8)}</p>
-
           </div>
-
-         
-
+          
           <div className="flex justify-between items-center mb-6">
-
              <span className="text-[10px] font-black uppercase opacity-40 italic">{order.table}</span>
-
              <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-white/5 text-[#00D9FF]' : 'bg-gray-100 text-gray-800'}`}>
-
                 {order.method || 'Espèces'}
-
              </span>
-
           </div>
-
-
 
           <div className="space-y-3 mb-8">
-
             {order.items.length > 0 ? order.items.map((item, i) => (
-
               <div key={i} className="flex justify-between text-sm">
-
                 <span className="font-bold text-[11px] uppercase">{item.name}</span>
-
                 <span className="font-black text-[11px]">{item.price?.toLocaleString()} F</span>
-
               </div>
-
             )) : (
-
               <p className="text-center text-[10px] italic opacity-30">Détails non disponibles</p>
-
             )}
-
           </div>
-
-         
-
+          
           <div className="flex justify-between items-center pt-4 border-t-2 border-dashed border-gray-500/20">
-
             <span className="text-xs font-black uppercase italic">Encaissé</span>
-
             <span className="text-2xl font-black text-[#00D9FF]">{order.total?.toLocaleString()} F</span>
-
           </div>
-
         </div>
-
         <button onClick={onClose} className="mt-6 w-full py-4 bg-red-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest active:scale-95 transition-all">Fermer</button>
-
       </div>
-
     </div>
-
   );
-
 }
-
-// (Le reste du code ReceiptModal reste identique)

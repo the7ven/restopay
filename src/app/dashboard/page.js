@@ -6,9 +6,10 @@ import {
   Wallet, Plus, Grid, Flame, TrendingUp, Clock, CheckCircle2,
   Menu as MenuIcon, X, ChevronDown, Sun, Moon, Package, FileText,
   ShoppingBag, History, ArrowRight, Calendar as CalendarIcon, Settings2,
-  Banknote, Smartphone, CreditCard
+  Banknote, Smartphone, CreditCard, ShieldCheck
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from 'next/navigation';
 import { useTheme } from "@/context/ThemeContext";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -27,13 +28,14 @@ import StaffTabContent from './tabs/StaffTabContent';
 import SettingsTabContent from './tabs/SettingsTabContent';
 
 export default function AdminDashboard() {
+  const router = useRouter();
   const { isDarkMode, toggleTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState(null); // Pour stocker le statut Admin
   
-  // ON STOCK LA DATE EN FORMAT ISO (YYYY-MM-DD) POUR LES REQUÊTES
   const [selectedDateISO, setSelectedDateISO] = useState(new Date().toISOString().split('T')[0]);
   const [currentDateDisplay, setCurrentDateDisplay] = useState("");
   
@@ -44,7 +46,52 @@ export default function AdminDashboard() {
   useEffect(() => {
     setMounted(true);
     updateDisplayDate(new Date());
+    fetchUserProfile(); // Charger le profil au montage
   }, []);
+
+  // --- RÉCUPÉRATION DU PROFIL CORRIGÉE (FIX ERREUR 406) ---
+  const fetchUserProfile = async () => {
+    console.log("🚀 Tentative de récupération du profil...");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error("❌ Aucun utilisateur connecté trouvé dans Supabase Auth");
+        return;
+      }
+
+      console.log("🆔 Ton ID actuel est :", user.id);
+
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('is_super_admin')
+        .eq('id', user.id);
+      
+      if (error) {
+        console.error("❌ Erreur Supabase :", error.message);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        console.log("📊 Données reçues de la table :", data[0]);
+        setUserProfile(data[0]);
+      } else {
+        console.warn("⚠️ Aucune ligne trouvée dans la table 'restaurants' pour cet ID.");
+      }
+    } catch (err) {
+      console.error("💥 Erreur crash :", err);
+    }
+  };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Erreur:", error.message);
+    } else {
+      router.refresh();
+      router.push('/');
+    }
+  };
 
   const updateDisplayDate = (date) => {
     setCurrentDateDisplay(
@@ -59,8 +106,8 @@ export default function AdminDashboard() {
   const handleDateChange = (e) => {
     const val = e.target.value;
     if (val) {
-      setSelectedDateISO(val); // Met à jour la date pour Supabase
-      updateDisplayDate(new Date(val)); // Met à jour l'affichage
+      setSelectedDateISO(val);
+      updateDisplayDate(new Date(val));
     }
   };
 
@@ -122,10 +169,21 @@ export default function AdminDashboard() {
           <NavItem isDarkMode={isDarkMode} icon={<Settings size={20} />} label="Paramètres" active={activeTab === "settings"} onClick={() => { setActiveTab("settings"); setIsSidebarOpen(false); }} />
         </nav>
 
-        <Link href="/" className="mt-6 flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-400/10 rounded-xl transition-all font-bold group no-underline">
+        {/* --- BOUTON SUPERUSER (VISIBLE UNIQUEMENT SI ADMIN) --- */}
+        {userProfile?.is_super_admin && (
+          <Link href="/admin/master" className="mt-4 flex items-center gap-3 px-4 py-3 bg-[#00D9FF]/10 text-[#00D9FF] rounded-xl transition-all font-black border border-[#00D9FF]/20 hover:bg-[#00D9FF]/20 no-underline group">
+            <ShieldCheck size={20} className="group-hover:rotate-12 transition-transform" />
+            <span className="text-xs tracking-widest uppercase">Master Control</span>
+          </Link>
+        )}
+
+        <button 
+          onClick={handleLogout}
+          className="mt-2 flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-400/10 rounded-xl transition-all font-bold group w-full text-left bg-transparent border-none cursor-pointer"
+        >
           <LogOut size={20} className="group-hover:rotate-12 transition-transform" />
           <span>Déconnexion</span>
-        </Link>
+        </button>
       </aside>
 
       <main className="flex-1 p-4 lg:p-8 w-full max-h-screen overflow-y-auto">
@@ -163,6 +221,7 @@ export default function AdminDashboard() {
   );
 }
 
+// --- ONGLET OVERVIEW MIS À JOUR AVEC FILTRE PAR RESTAURANT ---
 function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
   const [realStats, setRealStats] = useState({ 
     dayTotal: 0, 
@@ -174,29 +233,30 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
 
   useEffect(() => {
     const fetchRealData = async () => {
-      // ON RÉCUPÈRE LES TRANSACTIONS DU JOUR SÉLECTIONNÉ
+      // 1. On récupère d'abord l'utilisateur connecté
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const startOfDay = `${selectedDate}T00:00:00.000Z`;
       const endOfDay = `${selectedDate}T23:59:59.999Z`;
 
+      // 2. Requête filtrée par restaurant_id pour isoler les données
       const { data: transData } = await supabase
         .from('transactions')
         .select('*')
+        .eq('restaurant_id', user.id) // <--- FILTRE D'ISOLATION AJOUTÉ
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay)
         .order('created_at', { ascending: false });
 
       if (transData) {
-        // 1. Total du jour
         const total = transData.reduce((acc, curr) => acc + Number(curr.amount), 0);
-        
-        // 2. Par mode de paiement
         const methods = transData.reduce((acc, curr) => {
           const m = curr.payment_method || "Espèces";
           acc[m] = (acc[m] || 0) + Number(curr.amount);
           return acc;
         }, { "Espèces": 0, "Orange Money": 0, "Wave": 0 });
 
-        // 3. Top Plats du jour
         const itemCounts = {};
         transData.forEach(t => {
           if (t.items && Array.isArray(t.items)) {
@@ -210,7 +270,6 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
           .sort((a, b) => b.count - a.count)
           .slice(0, 3);
 
-        // 4. Graphique (Heures de rush du jour sélectionné)
         const hourlySales = [...Array(24)].map((_, hour) => {
           const totalInHour = transData
             .filter(t => new Date(t.created_at).getHours() === hour)
@@ -221,14 +280,12 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
         setRealStats({ dayTotal: total, byMethod: methods, chartData: hourlySales, popularItems: sortedItems });
         setRecentOrders(transData.slice(0, 4));
       } else {
-        // Si aucune donnée pour ce jour
         setRealStats({ dayTotal: 0, byMethod: { "Espèces": 0, "Orange Money": 0, "Wave": 0 }, chartData: [], popularItems: [] });
         setRecentOrders([]);
       }
     };
-
     fetchRealData();
-  }, [selectedDate]); // SE RECHARGE CHAQUE FOIS QUE LA DATE CHANGE
+  }, [selectedDate]);
 
   return (
     <div className="fade-in text-left">
@@ -237,7 +294,6 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
         <div className="relative z-10 text-left">
           <p className="text-[#00D9FF] text-xs font-black uppercase tracking-[0.2em] mb-2">Recettes du jour sélectionné</p>
           <h2 className="text-4xl lg:text-6xl font-black">{realStats.dayTotal.toLocaleString()} <span className="text-xl opacity-50 font-bold">FCFA</span></h2>
-          
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-8 pt-6 border-t border-white/5">
             <PaymentMiniStat label="Espèces" value={realStats.byMethod["Espèces"]} icon={<Banknote size={16}/>} color="green" />
             <PaymentMiniStat label="Orange Money" value={realStats.byMethod["Orange Money"]} icon={<Smartphone size={16}/>} color="orange" />
@@ -273,15 +329,14 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
             }
           </div>
         </div>
-        
         <div className={`border rounded-[32px] p-8 ${isDarkMode ? "bg-[#0a0a0a] border-white/5" : "bg-white border-gray-100 shadow-sm"}`}>
-          <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-left text-left">Top Ventes du jour <Flame size={18} className="text-orange-500" /></h3>
+          <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-left">Top Ventes du jour <Flame size={18} className="text-orange-500" /></h3>
           <div className="space-y-6">
-             {realStats.popularItems.length === 0 ? <p className="opacity-30 italic text-sm">Rien de vendu ce jour</p> : 
+              {realStats.popularItems.length === 0 ? <p className="opacity-30 italic text-sm">Rien de vendu ce jour</p> : 
               realStats.popularItems.map((item, i) => (
                 <PopularItem key={i} isDarkMode={isDarkMode} name={item.name} count={`${item.count} fois`} trend={i === 0 ? "Bestseller" : ""} />
               ))
-             }
+              }
           </div>
         </div>
       </div>
@@ -289,7 +344,6 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
   );
 }
 
-// COMPOSANTS DE STRUCTURE
 function PaymentMiniStat({ label, value, icon, color }) {
   const colors = { green: "bg-green-500/10 text-green-500", orange: "bg-orange-500/10 text-orange-500", blue: "bg-blue-500/10 text-blue-500" };
   return (

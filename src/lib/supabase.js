@@ -1,6 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// On utilise createBrowserClient pour que les cookies de session 
+// soient partagés entre le navigateur et le Middleware
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
