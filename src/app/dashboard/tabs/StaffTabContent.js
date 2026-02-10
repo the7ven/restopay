@@ -1,19 +1,55 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, UserPlus, Star, Clock, 
   Phone, Mail, MoreVertical, Edit3, 
   Trash2, ShieldCheck, CheckCircle2 
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function StaffTabContent({ isDarkMode }) {
-  const [staff, setStaff] = useState([
-    { id: 1, name: "Koffi Kouamé", role: "Chef de Rang", status: "Présent", sales: "145.000", rating: 4.8, phone: "+225 07070707" },
-    { id: 2, name: "Sali Traoré", role: "Serveuse", status: "Présent", sales: "98.000", rating: 4.9, phone: "+225 01010101" },
-    { id: 3, name: "Moussa Diakité", role: "Cuisinier", status: "En pause", sales: "0", rating: 4.7, phone: "+225 05050505" },
-    { id: 4, name: "Awa Koné", role: "Serveuse", status: "Absent", sales: "0", rating: 4.5, phone: "+225 09090909" },
-  ]);
+  // On commence avec un tableau vide
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // --- CHARGEMENT DES DONNÉES DEPUIS SUPABASE ---
+  useEffect(() => {
+    fetchStaff();
+  }, []);
+
+  const fetchStaff = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('staff')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setStaff(data || []);
+    } catch (error) {
+      console.error('Erreur lors du chargement du personnel:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- SUPPRESSION D'UN MEMBRE ---
+  const handleDeleteMember = async (id, name) => {
+    if (window.confirm(`Voulez-vous vraiment retirer ${name} de l'équipe ?`)) {
+      const { error } = await supabase
+        .from('staff')
+        .delete()
+        .eq('id', id);
+
+      if (!error) {
+        setStaff(staff.filter(member => member.id !== id));
+      } else {
+        alert("Erreur lors de la suppression");
+      }
+    }
+  };
 
   const getStatusStyle = (status) => {
     switch (status) {
@@ -23,13 +59,19 @@ export default function StaffTabContent({ isDarkMode }) {
     }
   };
 
+  if (loading) return (
+    <div className="flex h-64 items-center justify-center italic opacity-50">
+      Chargement de l'équipe RestoPay...
+    </div>
+  );
+
   return (
     <div className="fade-in text-left pb-10">
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
         <div>
-          <h3 className="text-3xl font-black italic tracking-tighter">Gestion du Personnel</h3>
-          <p className="opacity-50 text-sm font-light uppercase tracking-widest">Équipe RestoPay • {staff.length} Membres</p>
+          <h3 className="text-3xl font-black italic tracking-tighter text-left">Gestion du Personnel</h3>
+          <p className="opacity-50 text-sm font-light uppercase tracking-widest text-left">Équipe RestoPay • {staff.length} Membres</p>
         </div>
         
         <button className="bg-[#00D9FF] text-black px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-cyan-500/20 hover:scale-105 transition-all flex items-center gap-3">
@@ -46,46 +88,52 @@ export default function StaffTabContent({ isDarkMode }) {
 
       {/* --- LISTE DES EMPLOYÉS --- */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {staff.map((member) => (
-          <div key={member.id} className={`p-6 rounded-[35px] border transition-all hover:scale-[1.01] group ${isDarkMode ? 'bg-[#0a0a0a] border-white/5 hover:border-[#00D9FF]/20' : 'bg-white border-gray-100 shadow-sm'}`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                {/* Avatar stylisé */}
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-lg ${isDarkMode ? 'bg-white/5 text-[#00D9FF]' : 'bg-gray-100 text-gray-700'}`}>
-                  {member.name.split(' ').map(n => n[0]).join('')}
+        {staff.length === 0 ? (
+           <p className="col-span-2 text-center py-10 opacity-30 italic">Aucun membre enregistré dans la base de données.</p>
+        ) : (
+          staff.map((member) => (
+            <div key={member.id} className={`p-6 rounded-[35px] border transition-all hover:scale-[1.01] group ${isDarkMode ? 'bg-[#0a0a0a] border-white/5 hover:border-[#00D9FF]/20' : 'bg-white border-gray-100 shadow-sm'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-lg ${isDarkMode ? 'bg-white/5 text-[#00D9FF]' : 'bg-gray-100 text-gray-700'}`}>
+                    {member.name ? member.name.split(' ').map(n => n[0]).join('') : '?'}
+                  </div>
+                  <div className="text-left">
+                    <h4 className="font-black text-lg tracking-tight">{member.name}</h4>
+                    <p className="text-[10px] uppercase font-black opacity-40 tracking-widest">{member.role}</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-black text-lg tracking-tight">{member.name}</h4>
-                  <p className="text-[10px] uppercase font-black opacity-40 tracking-widest">{member.role}</p>
-                </div>
+                <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${getStatusStyle(member.status)}`}>
+                  {member.status}
+                </span>
               </div>
-              <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${getStatusStyle(member.status)}`}>
-                {member.status}
-              </span>
-            </div>
 
-            <div className={`mt-6 p-4 rounded-2xl flex justify-between items-center ${isDarkMode ? 'bg-white/[0.02]' : 'bg-gray-50'}`}>
-              <div className="text-center">
-                <p className="text-[9px] opacity-40 font-black uppercase tracking-widest">CA Réalisé</p>
-                <p className="font-black text-[#00D9FF]">{member.sales} F</p>
-              </div>
-              <div className="h-8 w-[1px] bg-white/5"></div>
-              <div className="text-center">
-                <p className="text-[9px] opacity-40 font-black uppercase tracking-widest">Note Service</p>
-                <p className="font-black">{member.rating}</p>
-              </div>
-              <div className="h-8 w-[1px] bg-white/5"></div>
-              <div className="flex gap-2">
-                <button className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-white/5 text-white/40 hover:text-white' : 'bg-white text-gray-500 shadow-sm border border-gray-100'}`}>
-                  <Phone size={14} />
-                </button>
-                <button className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-white/5 text-white/40 hover:text-red-500 hover:bg-red-500/10' : 'bg-white text-gray-500 shadow-sm border border-gray-100'}`}>
-                  <Trash2 size={14} />
-                </button>
+              <div className={`mt-6 p-4 rounded-2xl flex justify-between items-center ${isDarkMode ? 'bg-white/[0.02]' : 'bg-gray-50'}`}>
+                <div className="text-center">
+                  <p className="text-[9px] opacity-40 font-black uppercase tracking-widest">CA Réalisé</p>
+                  <p className="font-black text-[#00D9FF]">{member.total_sales?.toLocaleString() || 0} F</p>
+                </div>
+                <div className="h-8 w-[1px] bg-white/5 opacity-10"></div>
+                <div className="text-center">
+                  <p className="text-[9px] opacity-40 font-black uppercase tracking-widest">Note Service</p>
+                  <p className="font-black">{member.rating || '5.0'}</p>
+                </div>
+                <div className="h-8 w-[1px] bg-white/5 opacity-10"></div>
+                <div className="flex gap-2">
+                  <a href={`tel:${member.phone}`} className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-white/5 text-white/40 hover:text-white' : 'bg-white text-gray-500 shadow-sm border border-gray-100'}`}>
+                    <Phone size={14} />
+                  </a>
+                  <button 
+                    onClick={() => handleDeleteMember(member.id, member.name)}
+                    className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-white/5 text-white/20 hover:text-red-500 hover:bg-red-500/10' : 'bg-white text-gray-500 shadow-sm border border-gray-100'}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );
