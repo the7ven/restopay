@@ -2,11 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
-  let res = NextResponse.next({
-    request: {
-      headers: req.headers,
-    },
-  });
+  let res = NextResponse.next();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,32 +11,26 @@ export async function middleware(req) {
       cookies: {
         get(name) { return req.cookies.get(name)?.value },
         set(name, value, options) {
-          req.cookies.set({ name, value, ...options });
-          res = NextResponse.next({ request: { headers: req.headers } });
           res.cookies.set({ name, value, ...options });
         },
         remove(name, options) {
-          req.cookies.set({ name, value, ...options });
-          res = NextResponse.next({ request: { headers: req.headers } });
-          res.cookies.set({ name, value, ...options });
+          res.cookies.delete({ name, value, ...options });
         },
       },
     }
   );
 
-  // CHANGEMENT CRUCIAL : Utilisez getUser() au lieu de getSession()
-  // getUser() est plus sûr et évite les problèmes de timeout de session sur Vercel
+  // Utilise getUser() mais seulement si on n'est pas sur une page statique
   const { data: { user } } = await supabase.auth.getUser();
 
-  // --- LOGIQUE DE REDIRECTION ---
-  
-  // 1. Si pas connecté -> redirection login
-  if (!user && req.nextUrl.pathname.startsWith('/dashboard')) {
+  const isAuthPage = req.nextUrl.pathname.startsWith('/auth');
+  const isDashboardPage = req.nextUrl.pathname.startsWith('/dashboard');
+
+  if (!user && isDashboardPage) {
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }
 
-  // 2. Si déjà connecté -> redirection dashboard
-  if (user && req.nextUrl.pathname.startsWith('/auth')) {
+  if (user && isAuthPage) {
     return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
@@ -48,6 +38,11 @@ export async function middleware(req) {
 }
 
 export const config = {
-  // On affine le matcher pour éviter les fichiers statiques
-  matcher: ['/dashboard/:path*', '/auth/:path*'],
+  // Cette ligne est CRUCIALE pour éviter le timeout 504
+  // Elle empêche le middleware de s'exécuter sur les images, fonts, etc.
+  matcher: [
+    '/dashboard/:path*', 
+    '/auth/:path*',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'
+  ],
 };
