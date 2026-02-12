@@ -1,79 +1,134 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart3, PieChart, ArrowDownCircle, ArrowUpCircle, 
   FileText, Wallet, Smartphone, Banknote, CreditCard,
-  Filter, Download, ChevronRight, Calendar
+  Filter, Download, ChevronRight, Calendar, Loader2
 } from 'lucide-react';
 import { 
   PieChart as RePieChart, Pie, Cell, ResponsiveContainer, 
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend 
 } from 'recharts';
+import { supabase } from '@/lib/supabase';
 
 export default function ReportsTabContent({ isDarkMode }) {
   const [period, setPeriod] = useState('mensuel');
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState({
+    recettes: 0,
+    achats: 0,
+    cash: 0,
+    virtuel: 0,
+    comparison: [],
+    paymentDistribution: []
+  });
 
-  // --- LOGIQUE DE DONNÉES FILTRÉES (Stats, Graphique ET Paiements) ---
-  const stats = useMemo(() => {
-    switch (period) {
-      case 'journalier':
-        return {
-          recettes: "145.000 F", achats: "52.000 F", cash: "80.000 F", virtuel: "65.000 F",
-          comparison: [
-            { name: 'Matin', recettes: 45000, achats: 20000 }, 
-            { name: 'Midi', recettes: 65000, achats: 12000 }, 
-            { name: 'Soir', recettes: 35000, achats: 20000 }
-          ],
-          paymentDistribution: [
-            { name: 'Espèces', value: 80000, color: '#22c55e' },
-            { name: 'Orange Money', value: 35000, color: '#ff6b00' },
-            { name: 'MTN MoMo', value: 20000, color: '#ffcc00' },
-            { name: 'Wave', value: 10000, color: '#00d9ff' },
-          ]
-        };
-      case 'hebdomadaire':
-        return {
-          recettes: "980.000 F", achats: "310.000 F", cash: "420.000 F", virtuel: "560.000 F",
-          comparison: [
-            { name: 'Lun-Mar', recettes: 270000, achats: 85000 }, 
-            { name: 'Mer-Jeu', recettes: 240000, achats: 85000 }, 
-            { name: 'Ven-Dim', recettes: 470000, achats: 140000 }
-          ],
-          paymentDistribution: [
-            { name: 'Espèces', value: 420000, color: '#22c55e' },
-            { name: 'Orange Money', value: 210000, color: '#ff6b00' },
-            { name: 'MTN MoMo', value: 180000, color: '#ffcc00' },
-            { name: 'Wave', value: 120000, color: '#00d9ff' },
-            { name: 'CB', value: 50000, color: '#a259ff' },
-          ]
-        };
-      default: // mensuel
-        return {
-          recettes: "4.750.000 F", achats: "1.850.000 F", cash: "2.100.000 F", virtuel: "2.650.000 F",
-          comparison: [
-            { name: 'Semaine 1', recettes: 1200000, achats: 450000 }, 
-            { name: 'Semaine 2', recettes: 950000, achats: 380000 }, 
-            { name: 'Semaine 3', recettes: 1500000, achats: 600000 }, 
-            { name: 'Semaine 4', recettes: 1100000, achats: 420000 }
-          ],
-          paymentDistribution: [
-            { name: 'Espèces', value: 2100000, color: '#22c55e' },
-            { name: 'Orange Money', value: 850000, color: '#ff6b00' },
-            { name: 'MTN MoMo', value: 750000, color: '#ffcc00' },
-            { name: 'Wave', value: 650000, color: '#00d9ff' },
-            { name: 'CB', value: 400000, color: '#a259ff' },
-          ]
-        };
-    }
+  useEffect(() => {
+    fetchReportData();
   }, [period]);
+
+  const fetchReportData = async () => {
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const now = new Date();
+      let startStr;
+
+      // Calcul de la période
+      if (period === 'journalier') {
+        startStr = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+      } else if (period === 'hebdomadaire') {
+        const lastWeek = new Date(now.setDate(now.getDate() - 7));
+        startStr = lastWeek.toISOString();
+      } else { // mensuel
+        startStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      }
+
+      // Requêtes parallèles pour les transactions et dépenses
+      const [transRes, expRes] = await Promise.all([
+        supabase.from('transactions')
+          .select('*')
+          .eq('restaurant_id', user.id)
+          .gte('created_at', startStr),
+        supabase.from('expenses')
+          .select('*')
+          .eq('restaurant_id', user.id)
+          .gte('created_at', startStr)
+      ]);
+
+      const transactions = transRes.data || [];
+      const expenses = expRes.data || [];
+
+      // --- CALCULS DES STATS ---
+      const totalRecettes = transactions.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+      const totalAchats = expenses.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+      
+      const cashOnly = transactions
+        .filter(t => !t.payment_method || t.payment_method === 'Espèces')
+        .reduce((acc, curr) => acc + curr.amount, 0);
+
+      // --- RÉPARTITION PAIEMENTS ---
+      const methods = transactions.reduce((acc, curr) => {
+        const m = curr.payment_method || 'Espèces';
+        acc[m] = (acc[m] || 0) + curr.amount;
+        return acc;
+      }, {});
+
+      const colors = { 
+        'Espèces': '#22c55e', 
+        'Orange Money': '#ff6b00', 
+        'Wave': '#00d9ff', 
+        'MTN MoMo': '#ffcc00',
+        'CB': '#a259ff' 
+      };
+
+      const paymentDist = Object.entries(methods).map(([name, value]) => ({
+        name,
+        value,
+        color: colors[name] || '#8884d8'
+      }));
+
+      // --- LOGIQUE DE COMPARAISON (Simplifiée par segments) ---
+      // Note: Pour un vrai graphique temporel, on pourrait grouper par jour précis
+      const comparisonData = [
+        { name: 'Ventes', recettes: totalRecettes, achats: 0 },
+        { name: 'Dépenses', recettes: 0, achats: totalAchats }
+      ];
+
+      setData({
+        recettes: totalRecettes,
+        achats: totalAchats,
+        cash: cashOnly,
+        virtuel: totalRecettes - cashOnly,
+        comparison: comparisonData,
+        paymentDistribution: paymentDist
+      });
+
+    } catch (err) {
+      console.error("Erreur rapports:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="h-96 flex flex-col items-center justify-center">
+        <Loader2 className="animate-spin text-[#00D9FF] mb-4" size={40} />
+        <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Analyse des flux financiers...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="fade-in text-left pb-10">
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-        <div>
-          <h3 className="text-3xl font-black italic tracking-tighter">Rapports Financiers</h3>
+        <div className="text-left">
+          <h3 className="text-3xl font-black italic tracking-tighter uppercase">Rapports Financiers</h3>
           <p className="opacity-50 text-sm font-light uppercase tracking-widest">Bilan {period} : Recettes vs Dépenses</p>
         </div>
         
@@ -91,41 +146,39 @@ export default function ReportsTabContent({ isDarkMode }) {
               </button>
             ))}
           </div>
-          <button className={`flex items-center gap-3 px-6 py-3 rounded-2xl border font-bold text-sm transition-all ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200 shadow-sm'}`}>
-            <Download size={18} />
-          </button>
         </div>
       </div>
 
-      {/* --- CARDS DE RÉSUMÉ --- */}
+      {/* --- CARDS DE RÉSUMÉ RÉELLES --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        <ReportSummaryCard isDarkMode={isDarkMode} label="Total Recettes" value={stats.recettes} icon={<ArrowUpCircle className="text-green-500" />} />
-        <ReportSummaryCard isDarkMode={isDarkMode} label="Total Achats" value={stats.achats} icon={<ArrowDownCircle className="text-red-500" />} />
-        <ReportSummaryCard isDarkMode={isDarkMode} label="Encaissement Cash" value={stats.cash} icon={<Banknote className="text-yellow-500" />} />
-        <ReportSummaryCard isDarkMode={isDarkMode} label="Paiements Virtuels" value={stats.virtuel} icon={<Smartphone className="text-[#00D9FF]" />} />
+        <ReportSummaryCard isDarkMode={isDarkMode} label="Total Recettes" value={`${data.recettes.toLocaleString()} F`} icon={<ArrowUpCircle className="text-green-500" />} />
+        <ReportSummaryCard isDarkMode={isDarkMode} label="Total Achats" value={`${data.achats.toLocaleString()} F`} icon={<ArrowDownCircle className="text-red-500" />} />
+        <ReportSummaryCard isDarkMode={isDarkMode} label="Encaissement Cash" value={`${data.cash.toLocaleString()} F`} icon={<Banknote className="text-yellow-500" />} />
+        <ReportSummaryCard isDarkMode={isDarkMode} label="Paiements Virtuels" value={`${data.virtuel.toLocaleString()} F`} icon={<Smartphone className="text-[#00D9FF]" />} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        {/* --- GRAPHIQUE 1 : RÉPARTITION DES PAIEMENTS (Dynamique) --- */}
+        {/* --- GRAPHIQUE 1 : RÉPARTITION DES PAIEMENTS --- */}
         <div className={`p-8 rounded-[45px] border ${isDarkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
-          <h4 className="text-lg font-black flex items-center gap-2 mb-8">
+          <h4 className="text-lg font-black flex items-center gap-2 mb-8 italic uppercase tracking-tighter">
             <PieChart size={20} className="text-[#00D9FF]" /> Règlement {period}
           </h4>
           <div className="h-64 flex flex-col md:flex-row items-center">
             <div className="w-full md:w-1/2 h-full">
               <ResponsiveContainer width="100%" height="100%">
                 <RePieChart>
-                  <Pie data={stats.paymentDistribution} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                    {stats.paymentDistribution.map((entry, index) => (
+                  <Pie data={data.paymentDistribution} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    {data.paymentDistribution.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: isDarkMode ? '#111' : '#fff' }} />
                 </RePieChart>
               </ResponsiveContainer>
             </div>
             <div className="w-full md:w-1/2 space-y-3 mt-6 md:mt-0">
-              {stats.paymentDistribution.map((p, idx) => (
+              {data.paymentDistribution.length === 0 ? <p className="text-[10px] opacity-20 italic">Aucune donnée</p> : 
+                data.paymentDistribution.map((p, idx) => (
                 <div key={idx} className="flex justify-between items-center px-4 py-2 rounded-xl bg-white/5 border border-white/5">
                   <div className="flex items-center gap-2 text-left">
                     <div className="w-2 h-2 rounded-full" style={{backgroundColor: p.color}}></div>
@@ -138,19 +191,19 @@ export default function ReportsTabContent({ isDarkMode }) {
           </div>
         </div>
 
-        {/* --- GRAPHIQUE 2 : COMPARAISON RECETTES vs ACHATS --- */}
+        {/* --- GRAPHIQUE 2 : RÉPABITILITÉ RECETTES vs ACHATS --- */}
         <div className={`p-8 rounded-[45px] border ${isDarkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
-          <h4 className="text-lg font-black flex items-center gap-2 mb-8">
-            <BarChart3 size={20} className="text-purple-500" /> Rentabilité {period}
+          <h4 className="text-lg font-black flex items-center gap-2 mb-8 italic uppercase tracking-tighter">
+            <BarChart3 size={20} className="text-purple-500" /> Comparatif {period}
           </h4>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.comparison}>
+              <BarChart data={data.comparison}>
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#666', fontSize: 10}} />
-                <Tooltip contentStyle={{ backgroundColor: isDarkMode ? '#111' : '#fff', borderRadius: '12px', border: 'none' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-                <Bar dataKey="recettes" fill="#00D9FF" radius={[4, 4, 0, 0]} name="Recettes" />
-                <Bar dataKey="achats" fill="#ff4d4d" radius={[4, 4, 0, 0]} name="Achats" />
+                <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: isDarkMode ? '#111' : '#fff', borderRadius: '12px', border: 'none' }} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', paddingTop: '20px' }} />
+                <Bar dataKey="recettes" fill="#00D9FF" radius={[10, 10, 10, 10]} name="Recettes" barSize={40} />
+                <Bar dataKey="achats" fill="#ff4d4d" radius={[10, 10, 10, 10]} name="Achats" barSize={40} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -160,21 +213,23 @@ export default function ReportsTabContent({ isDarkMode }) {
       {/* --- TABLEAU RÉCAPITULATIF DES FLUX --- */}
       <div className={`mt-8 rounded-[40px] border overflow-hidden ${isDarkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
         <div className="p-8 border-b border-white/5 flex justify-between items-center">
-          <h4 className="font-black italic text-lg tracking-tighter">Détail des flux virtuels</h4>
+          <h4 className="font-black italic text-lg tracking-tighter uppercase">Détail des flux</h4>
           <Smartphone className="opacity-20" size={20} />
         </div>
         <table className="w-full text-left">
           <thead>
             <tr className={isDarkMode ? 'bg-white/[0.02]' : 'bg-gray-50'}>
               <th className="px-8 py-5 text-[10px] uppercase tracking-widest font-black opacity-40">Opérateur</th>
-              <th className="px-8 py-5 text-[10px] uppercase tracking-widest font-black opacity-40">Transactions</th>
-              <th className="px-8 py-5 text-[10px] uppercase tracking-widest font-black opacity-40 text-right">Net</th>
+              <th className="px-8 py-5 text-[10px] uppercase tracking-widest font-black opacity-40 text-right">Montant Total</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.02]">
-            <VirtualPaymentRow name="Orange Money" count="142" total="185.000" color="text-[#ff6b00]" isDarkMode={isDarkMode} />
-            <VirtualPaymentRow name="MTN Mobile Money" count="98" total="125.000" color="text-yellow-500" isDarkMode={isDarkMode} />
-            <VirtualPaymentRow name="Wave" count="115" total="95.000" color="text-[#00d9ff]" isDarkMode={isDarkMode} />
+            {data.paymentDistribution.map((item, i) => (
+               <tr key={i} className="group hover:bg-white/[0.01] transition-colors">
+                  <td className="px-8 py-6 font-black text-sm uppercase tracking-tighter" style={{color: item.color}}>{item.name}</td>
+                  <td className="px-8 py-6 text-right font-black text-sm">{item.value.toLocaleString()} F</td>
+               </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -182,25 +237,15 @@ export default function ReportsTabContent({ isDarkMode }) {
   );
 }
 
-// COMPOSANTS DE STYLE CONSERVÉS
+// COMPOSANTS DE STYLE
 function ReportSummaryCard({ isDarkMode, label, value, icon }) {
   return (
-    <div className={`p-6 rounded-[35px] border ${isDarkMode ? 'bg-white/[0.02] border-white/5' : 'bg-white border-gray-100 shadow-sm transition-all'}`}>
+    <div className={`p-6 rounded-[35px] border ${isDarkMode ? 'bg-white/[0.02] border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
       <div className="flex justify-between items-start mb-4">
         <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-white/5' : 'bg-gray-50'}`}>{icon}</div>
       </div>
       <p className="text-[10px] uppercase tracking-[0.2em] opacity-40 font-black mb-1">{label}</p>
       <p className="text-xl font-black italic tracking-tighter">{value}</p>
     </div>
-  );
-}
-
-function VirtualPaymentRow({ name, count, total, color, isDarkMode }) {
-  return (
-    <tr className="group hover:bg-white/[0.01] transition-colors">
-      <td className={`px-8 py-6 font-black text-sm ${color}`}>{name}</td>
-      <td className="px-8 py-6 text-sm font-bold opacity-60">{count} ops</td>
-      <td className="px-8 py-6 text-right font-black text-sm">{total} F</td>
-    </tr>
   );
 }

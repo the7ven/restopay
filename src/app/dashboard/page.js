@@ -34,8 +34,9 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState(null); // Pour stocker le statut Admin
-  
+  const [userProfile, setUserProfile] = useState(null); 
+  const [restaurantName, setRestaurantName] = useState("Chargement...");
+  const [isActive, setIsActive] = useState(true); // Statut d'activation
   const [selectedDateISO, setSelectedDateISO] = useState(new Date().toISOString().split('T')[0]);
   const [currentDateDisplay, setCurrentDateDisplay] = useState("");
   
@@ -46,40 +47,27 @@ export default function AdminDashboard() {
   useEffect(() => {
     setMounted(true);
     updateDisplayDate(new Date());
-    fetchUserProfile(); // Charger le profil au montage
+    fetchUserProfile(); 
   }, []);
 
-  // --- RÉCUPÉRATION DU PROFIL CORRIGÉE (FIX ERREUR 406) ---
   const fetchUserProfile = async () => {
-    console.log("🚀 Tentative de récupération du profil...");
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        console.error("❌ Aucun utilisateur connecté trouvé dans Supabase Auth");
-        return;
-      }
-
-      console.log("🆔 Ton ID actuel est :", user.id);
-
-      const { data, error } = await supabase
-        .from('restaurants')
-        .select('is_super_admin')
-        .eq('id', user.id);
-      
-      if (error) {
-        console.error("❌ Erreur Supabase :", error.message);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        console.log("📊 Données reçues de la table :", data[0]);
-        setUserProfile(data[0]);
-      } else {
-        console.warn("⚠️ Aucune ligne trouvée dans la table 'restaurants' pour cet ID.");
+      if (user) {
+        const { data, error } = await supabase
+          .from('restaurants')
+          .select('name, is_super_admin, is_active')
+          .eq('id', user.id)
+          .single();
+        
+        if (data) {
+          setRestaurantName(data.name || "Mon Restaurant");
+          setIsActive(data.is_active ?? false); // On récupère le statut
+          setUserProfile(data);
+        }
       }
     } catch (err) {
-      console.error("💥 Erreur crash :", err);
+      console.error("Erreur profil:", err);
     }
   };
 
@@ -120,6 +108,11 @@ export default function AdminDashboard() {
 
   if (!mounted) return null;
 
+  // --- ÉCRAN DE BLOCAGE SI COMPTE INACTIF ---
+  if (!isActive && !userProfile?.is_super_admin) {
+    return <AccountInactiveScreen restaurantName={restaurantName} handleLogout={handleLogout} />;
+  }
+
   const renderContent = () => {
     switch (activeTab) {
       case "overview": return <OverviewTabContent isDarkMode={isDarkMode} setActiveTab={setActiveTab} selectedDate={selectedDateISO} />;
@@ -132,7 +125,13 @@ export default function AdminDashboard() {
       case "reports": return <ReportsTabContent isDarkMode={isDarkMode} />;
       case "expenses": return <ExpensesTabContent isDarkMode={isDarkMode} setActiveTab={setActiveTab} selectedDate={selectedDateISO} />;
       case "staff": return <StaffTabContent isDarkMode={isDarkMode} />;
-      case "settings": return <SettingsTabContent isDarkMode={isDarkMode} />;
+      case "settings":
+        return (
+          <SettingsTabContent 
+            isDarkMode={isDarkMode} 
+            setGlobalRestoName={setRestaurantName} 
+          />
+        );
       default: return <div className="p-20 opacity-20 italic">Module en développement...</div>;
     }
   };
@@ -169,7 +168,6 @@ export default function AdminDashboard() {
           <NavItem isDarkMode={isDarkMode} icon={<Settings size={20} />} label="Paramètres" active={activeTab === "settings"} onClick={() => { setActiveTab("settings"); setIsSidebarOpen(false); }} />
         </nav>
 
-        {/* --- BOUTON SUPERUSER (VISIBLE UNIQUEMENT SI ADMIN) --- */}
         {userProfile?.is_super_admin && (
           <Link href="/admin/master" className="mt-4 flex items-center gap-3 px-4 py-3 bg-[#00D9FF]/10 text-[#00D9FF] rounded-xl transition-all font-black border border-[#00D9FF]/20 hover:bg-[#00D9FF]/20 no-underline group">
             <ShieldCheck size={20} className="group-hover:rotate-12 transition-transform" />
@@ -194,10 +192,12 @@ export default function AdminDashboard() {
             </button>
             <div className="relative group cursor-pointer text-left" onClick={() => setIsProfileOpen(!isProfileOpen)}>
               <div className="flex items-center gap-2">
-                <h2 className={`text-xl lg:text-3xl font-black tracking-tight transition-colors ${isDarkMode ? "text-white" : "text-gray-900"}`}>Bonjour, Corneille</h2>
+                <h2 className={`text-xl lg:text-3xl font-black tracking-tight transition-colors ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                  Bonjour, {restaurantName}
+                </h2>
                 <ChevronDown size={20} className={`text-[#00D9FF] transition-transform ${isProfileOpen ? "rotate-180" : ""}`} />
               </div>
-              <p className="text-[#888] text-xs lg:text-base font-medium uppercase tracking-tighter">Manager @ RestoPay Cloud</p>
+              <p className="text-[#888] text-xs lg:text-base font-medium uppercase tracking-tighter italic">Manager @ RestoPay Cloud</p>
             </div>
           </div>
 
@@ -221,7 +221,52 @@ export default function AdminDashboard() {
   );
 }
 
-// --- ONGLET OVERVIEW MIS À JOUR AVEC FILTRE PAR RESTAURANT ---
+// --- COMPOSANT D'ATTENTE ACTIVATION ---
+function AccountInactiveScreen({ restaurantName, handleLogout }) {
+  return (
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 font-[family-name:var(--font-lexend)]">
+      <div className="max-w-md w-full text-center space-y-8 p-10 rounded-[50px] border border-white/5 bg-[#0a0a0a] shadow-2xl">
+        <div className="relative inline-block">
+          <div className="absolute inset-0 bg-[#00D9FF] blur-3xl opacity-20 animate-pulse"></div>
+          <div className="relative bg-white/5 p-8 rounded-full border border-[#00D9FF]/20 text-[#00D9FF]">
+            <Clock size={60} strokeWidth={1} className="animate-pulse" />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h2 className="text-3xl font-black italic tracking-tighter text-white uppercase">Activation en cours</h2>
+          <p className="text-white/40 text-sm font-medium leading-relaxed">
+            Bienvenue chez RestoPay, <span className="text-[#00D9FF]">{restaurantName}</span> ! 
+            Votre compte est actuellement en attente de validation par notre équipe.
+          </p>
+        </div>
+
+        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/5 space-y-3">
+          <p className="text-[10px] uppercase font-black tracking-widest text-[#00D9FF]">Besoin d'aide ?</p>
+          <p className="text-xs text-white/60">Contactez le support technique pour activer votre licence.</p>
+          <p className="text-sm font-bold text-white tracking-tight">WhatsApp: +225 0700000000</p>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <button 
+            onClick={() => window.location.reload()} 
+            className="w-full py-4 rounded-2xl bg-white text-black font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+          >
+            Vérifier mon statut
+          </button>
+          <button 
+            onClick={handleLogout}
+            className="w-full py-4 rounded-2xl bg-transparent text-red-500 font-bold text-xs uppercase tracking-widest hover:bg-red-500/10 transition-all"
+          >
+            Se déconnecter
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ... Reste des composants OverviewTabContent, etc ...
 function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
   const [realStats, setRealStats] = useState({ 
     dayTotal: 0, 
@@ -233,18 +278,16 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
 
   useEffect(() => {
     const fetchRealData = async () => {
-      // 1. On récupère d'abord l'utilisateur connecté
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       const startOfDay = `${selectedDate}T00:00:00.000Z`;
       const endOfDay = `${selectedDate}T23:59:59.999Z`;
 
-      // 2. Requête filtrée par restaurant_id pour isoler les données
       const { data: transData } = await supabase
         .from('transactions')
         .select('*')
-        .eq('restaurant_id', user.id) // <--- FILTRE D'ISOLATION AJOUTÉ
+        .eq('restaurant_id', user.id)
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay)
         .order('created_at', { ascending: false });
@@ -279,9 +322,6 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
 
         setRealStats({ dayTotal: total, byMethod: methods, chartData: hourlySales, popularItems: sortedItems });
         setRecentOrders(transData.slice(0, 4));
-      } else {
-        setRealStats({ dayTotal: 0, byMethod: { "Espèces": 0, "Orange Money": 0, "Wave": 0 }, chartData: [], popularItems: [] });
-        setRecentOrders([]);
       }
     };
     fetchRealData();
@@ -303,7 +343,7 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
       </div>
 
       <div className={`mb-8 p-8 rounded-[32px] border transition-all ${isDarkMode ? "bg-[#0a0a0a] border-white/5" : "bg-white border-gray-100 shadow-sm"}`}>
-        <h3 className="text-xl font-bold flex items-center gap-2 mb-8 text-left">Rush horaire de la journée <TrendingUp size={20} className="text-[#00D9FF]" /></h3>
+        <h3 className="text-xl font-bold flex items-center gap-2 mb-8 text-left uppercase tracking-tighter italic">Rush horaire de la journée <TrendingUp size={20} className="text-[#00D9FF]" /></h3>
         <div className="h-64 lg:h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={realStats.chartData}>
@@ -320,7 +360,7 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 text-left">
         <div onClick={() => setActiveTab("orders")} className={`xl:col-span-2 border rounded-[32px] p-8 transition-all cursor-pointer group ${isDarkMode ? "bg-[#0a0a0a] border-white/5 hover:border-[#00D9FF]/30" : "bg-white border-gray-100 shadow-sm"}`}>
-          <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-left">Ventes du jour <ArrowRight size={18} className="text-[#00D9FF]" /></h3>
+          <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-left uppercase tracking-tighter italic">Ventes du jour <ArrowRight size={18} className="text-[#00D9FF]" /></h3>
           <div className="space-y-4">
             {recentOrders.length === 0 ? <p className="opacity-20 italic">Aucune vente pour ce jour</p> : 
               recentOrders.map((order, i) => (
@@ -330,7 +370,7 @@ function OverviewTabContent({ isDarkMode, setActiveTab, selectedDate }) {
           </div>
         </div>
         <div className={`border rounded-[32px] p-8 ${isDarkMode ? "bg-[#0a0a0a] border-white/5" : "bg-white border-gray-100 shadow-sm"}`}>
-          <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-left">Top Ventes du jour <Flame size={18} className="text-orange-500" /></h3>
+          <h3 className="text-xl font-bold flex items-center gap-2 mb-6 text-left uppercase tracking-tighter italic">Top Ventes du jour <Flame size={18} className="text-orange-500" /></h3>
           <div className="space-y-6">
               {realStats.popularItems.length === 0 ? <p className="opacity-30 italic text-sm">Rien de vendu ce jour</p> : 
               realStats.popularItems.map((item, i) => (
@@ -370,7 +410,7 @@ function OrderRow({ table, dishes, total, status, isDarkMode }) {
     <div className={`flex items-center justify-between p-4 border rounded-2xl transition-all ${isDarkMode ? "bg-white/[0.02] border-white/5" : "bg-gray-50 border-gray-100 shadow-sm hover:bg-white"}`}>
       <div className="flex items-center gap-4 text-left">
         <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold bg-[#00D9FF]/10 text-[#00D9FF]">{table}</div>
-        <div className="text-left"><h4 className="font-bold text-sm">{dishes}</h4><p className="text-[10px] opacity-40 font-medium">{total}</p></div>
+        <div className="text-left"><h4 className="font-bold text-sm uppercase">{dishes}</h4><p className="text-[10px] opacity-40 font-medium">{total}</p></div>
       </div>
       <span className="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#00D9FF]/10 text-[#00D9FF]">{status}</span>
     </div>
@@ -380,8 +420,8 @@ function OrderRow({ table, dishes, total, status, isDarkMode }) {
 function PopularItem({ name, count, trend, isDarkMode }) {
   return (
     <div className="flex justify-between items-center text-left">
-      <div className="text-left"><h4 className="font-bold text-base">{name}</h4><p className="text-xs opacity-50 font-medium">{count}</p></div>
-      <span className="text-xs font-bold text-green-500 uppercase italic">{trend}</span>
+      <div className="text-left"><h4 className="font-bold text-base uppercase">{name}</h4><p className="text-xs opacity-50 font-medium">{count}</p></div>
+      <span className="text-xs font-bold text-green-500 uppercase italic tracking-tighter">{trend}</span>
     </div>
   );
 }
