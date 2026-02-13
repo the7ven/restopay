@@ -3,16 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
-  ShieldCheck, Users, Store, TrendingUp, ArrowLeft, 
-  Loader2, Search, CheckCircle2, XCircle, Power 
+  ShieldCheck, Users, Store, TrendingUp, ArrowLeft, ArrowRight, 
+  Loader2, CheckCircle2, XCircle, Power, AlertCircle, Clock
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function MasterAdminPage() {
   const [mounted, setMounted] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true); // Verrou de sécurité
-  const [stats, setStats] = useState({ totalRestos: 0, totalSales: 0, totalOrders: 0 });
+  const [authLoading, setAuthLoading] = useState(true);
+  const [stats, setStats] = useState({ totalRestos: 0, totalSales: 0 });
   const [restaurants, setRestaurants] = useState([]);
   const router = useRouter();
 
@@ -20,7 +20,7 @@ export default function MasterAdminPage() {
     setMounted(true);
     checkAdminAndFetchData();
 
-    // Ecoute en temps réel pour synchroniser les activations/désactivations
+    // Synchronisation en temps réel : si un resto s'inscrit, la liste s'actualise seule
     const channel = supabase.channel('master_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => fetchData())
       .subscribe();
@@ -30,41 +30,30 @@ export default function MasterAdminPage() {
 
   const checkAdminAndFetchData = async () => {
     try {
-      setAuthLoading(true);
-      
-      // 1. Vérification de la session
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        return router.replace('/auth/login');
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return router.replace('/auth/login');
 
-      // 2. Vérification stricte du rôle Super Admin
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from('restaurants')
         .select('is_super_admin')
         .eq('id', user.id)
         .single();
 
-      if (profileError || !profile?.is_super_admin) {
-        console.warn("Accès refusé : Vous n'êtes pas Super Admin");
+      if (!profile?.is_super_admin) {
         return router.replace('/dashboard');
       }
 
-      // 3. Si tout est OK, on charge les données
       await fetchData();
       setAuthLoading(false);
-      
     } catch (err) {
-      console.error("Erreur Master Admin:", err);
       router.replace('/dashboard');
     }
   };
 
   const fetchData = async () => {
-    const [restosRes, transRes, ordersRes] = await Promise.all([
+    const [restosRes, transRes] = await Promise.all([
       supabase.from('restaurants').select('*').order('created_at', { ascending: false }),
-      supabase.from('transactions').select('amount'),
-      supabase.from('orders').select('id', { count: 'exact' })
+      supabase.from('transactions').select('amount')
     ]);
 
     const totalCA = transRes.data?.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0) || 0;
@@ -72,8 +61,7 @@ export default function MasterAdminPage() {
     setRestaurants(restosRes.data || []);
     setStats({
       totalRestos: restosRes.data?.length || 0,
-      totalSales: totalCA,
-      totalOrders: ordersRes.count || 0
+      totalSales: totalCA
     });
   };
 
@@ -87,105 +75,105 @@ export default function MasterAdminPage() {
       if (error) throw error;
       fetchData(); 
     } catch (err) {
-      alert("Erreur lors de la modification du statut");
+      alert("Erreur technique lors de l'activation");
     }
   };
 
-  if (!mounted) return null;
+  // --- FILTRAGE DES DONNÉES ---
+  const pendingRestos = restaurants.filter(r => !r.is_active);
+  const activeRestos = restaurants.filter(r => r.is_active);
 
-  // --- ECRAN DE CHARGEMENT DE SÉCURITÉ (Anti-Hacker) ---
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center">
-        <div className="relative">
-          <div className="absolute inset-0 bg-[#00D9FF] blur-3xl opacity-20 animate-pulse"></div>
-          <Loader2 className="animate-spin text-[#00D9FF] relative" size={40} />
-        </div>
-        <p className="mt-4 text-[10px] font-black uppercase tracking-[0.3em] text-white/40 italic">
-          Vérification des privilèges Master...
-        </p>
-      </div>
-    );
-  }
+  if (!mounted) return null;
+  if (authLoading) return <div className="min-h-screen bg-[#050505] flex items-center justify-center"><Loader2 className="animate-spin text-[#00D9FF]" size={40} /></div>;
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-[family-name:var(--font-lexend)] p-8">
-      {/* HEADER */}
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6 text-left">
+      
+      {/* HEADER MASTER */}
+      <div className="max-w-7xl mx-auto flex justify-between items-center mb-12">
         <div className="text-left">
-          <div className="flex items-center gap-3 text-[#00D9FF] mb-2">
-            <ShieldCheck size={24} />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em]">Master Control Center</span>
+          <div className="flex items-center gap-3 text-[#00D9FF] mb-2 font-black uppercase tracking-widest text-[10px]">
+            <ShieldCheck size={20} /> Master Control System
           </div>
-          <h1 className="text-4xl font-black italic tracking-tighter text-left uppercase">Supervision SaaS</h1>
+          <h1 className="text-4xl font-black italic uppercase tracking-tighter">Gestion du SaaS</h1>
         </div>
-        <Link href="/dashboard" className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-sm font-bold">
-          <ArrowLeft size={18} /> Retour Dashboard
+        <Link href="/dashboard" className="flex items-center gap-2 px-6 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-bold hover:bg-white/10 transition-all">
+          <ArrowRight size={16} className="rotate-180" /> Retour Dashboard
         </Link>
       </div>
 
-      {/* STATS GLOBALES */}
+      {/* CARTES DE STATISTIQUES */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-        <StatCard label="Total Restaurants" value={stats.totalRestos} icon={<Store className="text-purple-500" />} />
-        <StatCard label="Volume d'Affaires Global" value={`${stats.totalSales.toLocaleString()} F`} icon={<TrendingUp className="text-green-500" />} />
-        <StatCard label="Ventes cumulées" value={stats.totalOrders} icon={<Users className="text-[#00D9FF]" />} />
+        <StatCard label="Total Restaurants" value={stats.totalRestos} color="text-white" />
+        <StatCard label="Chiffre d'Affaire Global" value={`${stats.totalSales.toLocaleString()} F`} color="text-green-500" />
+        <StatCard label="En attente de validation" value={pendingRestos.length} color="text-orange-500" highlight={pendingRestos.length > 0} />
       </div>
 
-      {/* TABLEAU DES CLIENTS */}
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-[#0a0a0a] border border-white/5 rounded-[45px] overflow-hidden shadow-2xl">
-          <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
-            <h3 className="text-xl font-black italic tracking-tighter uppercase text-left">Portefeuille Clients</h3>
-            <div className="flex items-center gap-2 text-[10px] font-bold opacity-40 uppercase tracking-widest">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Synchronisation Live
+      <div className="max-w-7xl mx-auto space-y-10">
+        
+        {/* SECTION 1 : LES NOUVEAUX INSCRITS (VISIBLE UNIQUEMENT S'IL Y EN A) */}
+        {pendingRestos.length > 0 && (
+          <div className="animate-in fade-in slide-in-from-top-4 duration-700">
+            <h3 className="flex items-center gap-3 text-orange-500 font-black italic uppercase tracking-tighter mb-6 ml-4">
+              <AlertCircle size={22} /> Alertes : Nouvelles inscriptions à valider
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pendingRestos.map(resto => (
+                <div key={resto.id} className="bg-orange-500/5 border border-orange-500/20 p-6 rounded-[35px] flex justify-between items-center">
+                  <div className="text-left">
+                    <p className="font-black uppercase text-sm tracking-tight">{resto.name}</p>
+                    <p className="text-[10px] opacity-50 font-bold">{resto.owner_email || 'Email inconnu'}</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleStatus(resto.id, false)}
+                    className="bg-orange-500 text-black px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
+                  >
+                    Activer l'accès
+                  </button>
+                </div>
+              ))}
             </div>
+          </div>
+        )}
+
+        {/* SECTION 2 : LISTE COMPLÈTE DU PORTEFEUILLE */}
+        <div className="bg-[#0a0a0a] border border-white/5 rounded-[45px] overflow-hidden">
+          <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
+            <h3 className="text-xl font-black italic uppercase tracking-tighter text-left">Portefeuille Clients</h3>
+            <span className="text-[9px] font-bold opacity-30 uppercase tracking-[0.2em]">Flux en temps réel</span>
           </div>
           
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left">
               <thead>
                 <tr className="bg-white/[0.02]">
-                  <th className="px-8 py-5 text-[10px] uppercase font-black opacity-30">Restaurant / Gérant</th>
-                  <th className="px-8 py-5 text-[10px] uppercase font-black opacity-30">Localisation</th>
-                  <th className="px-8 py-5 text-[10px] uppercase font-black opacity-30">État du Compte</th>
+                  <th className="px-8 py-5 text-[10px] uppercase font-black opacity-30 text-left">Restaurant</th>
+                  <th className="px-8 py-5 text-[10px] uppercase font-black opacity-30 text-left">Statut</th>
                   <th className="px-8 py-5 text-[10px] uppercase font-black opacity-30 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.02]">
-                {restaurants.length === 0 ? (
-                  <tr><td colSpan="4" className="px-8 py-20 text-center opacity-20 italic">Aucun restaurant enregistré</td></tr>
-                ) : (
-                  restaurants.map((resto) => (
-                    <tr key={resto.id} className="group hover:bg-white/[0.01] transition-colors">
-                      <td className="px-8 py-6 text-left">
-                        <p className="font-black text-sm uppercase tracking-tight">{resto.name}</p>
-                        <p className="text-[10px] opacity-40 font-bold">{resto.owner_email || 'Email non fourni'}</p>
-                      </td>
-                      <td className="px-8 py-6 opacity-60 text-sm font-medium italic text-left">
-                        {resto.location || "Non renseignée"}
-                      </td>
-                      <td className="px-8 py-6 text-left">
-                        <span className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.15em] ${resto.is_active ? 'text-green-500' : 'text-red-500'}`}>
-                          {resto.is_active ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                          {resto.is_active ? 'Compte Actif' : 'En Attente / Suspendu'}
-                        </span>
-                      </td>
-                      <td className="px-8 py-6 text-right">
-                        <button 
-                          onClick={() => toggleStatus(resto.id, resto.is_active)}
-                          className={`flex items-center gap-2 ml-auto px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
-                            resto.is_active 
-                            ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white' 
-                            : 'bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/20 hover:bg-[#00D9FF] hover:text-black shadow-[#00D9FF]/20'
-                          }`}
-                        >
-                          <Power size={14} />
-                          {resto.is_active ? 'Désactiver' : 'Activer maintenant'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
+                {activeRestos.map((resto) => (
+                  <tr key={resto.id} className="group hover:bg-white/[0.01]">
+                    <td className="px-8 py-6 text-left">
+                      <p className="font-black text-sm uppercase">{resto.name}</p>
+                      <p className="text-[10px] opacity-40">{resto.owner_email}</p>
+                    </td>
+                    <td className="px-8 py-6 text-left">
+                      <span className="flex items-center gap-2 text-[9px] font-black uppercase text-green-500 tracking-widest">
+                        <CheckCircle2 size={14} /> Compte Actif
+                      </span>
+                    </td>
+                    <td className="px-8 py-6 text-right">
+                      <button 
+                        onClick={() => toggleStatus(resto.id, true)}
+                        className="text-red-500 bg-red-500/10 border border-red-500/20 px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
+                      >
+                        Suspendre
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -195,17 +183,11 @@ export default function MasterAdminPage() {
   );
 }
 
-function StatCard({ label, value, icon }) {
+function StatCard({ label, value, color, highlight }) {
   return (
-    <div className="p-8 bg-[#0a0a0a] border border-white/5 rounded-[40px] shadow-xl text-left relative overflow-hidden group">
-      <div className="absolute top-0 right-0 p-6 opacity-[0.02] group-hover:scale-125 transition-transform duration-700">
-        {icon}
-      </div>
-      <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-6 group-hover:bg-[#00D9FF]/10 transition-colors">
-        {icon}
-      </div>
-      <p className="text-[10px] uppercase font-black opacity-40 tracking-widest mb-1">{label}</p>
-      <p className="text-3xl font-black italic tracking-tighter">{value}</p>
+    <div className={`p-8 bg-[#0a0a0a] border ${highlight ? 'border-orange-500/50' : 'border-white/5'} rounded-[40px] text-left transition-all`}>
+      <p className="text-[10px] uppercase font-black opacity-30 tracking-widest mb-1">{label}</p>
+      <p className={`text-3xl font-black italic tracking-tighter ${color}`}>{value}</p>
     </div>
   );
 }
