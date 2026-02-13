@@ -2,13 +2,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { ShieldCheck, Users, Store, TrendingUp, ArrowLeft, Loader2, Search, CheckCircle2, XCircle, Power } from 'lucide-react';
+import { 
+  ShieldCheck, Users, Store, TrendingUp, ArrowLeft, 
+  Loader2, Search, CheckCircle2, XCircle, Power 
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function MasterAdminPage() {
   const [mounted, setMounted] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true); // Verrou de sécurité
   const [stats, setStats] = useState({ totalRestos: 0, totalSales: 0, totalOrders: 0 });
   const [restaurants, setRestaurants] = useState([]);
   const router = useRouter();
@@ -27,25 +30,33 @@ export default function MasterAdminPage() {
 
   const checkAdminAndFetchData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.replace('/auth/login');
+      setAuthLoading(true);
+      
+      // 1. Vérification de la session
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        return router.replace('/auth/login');
+      }
 
-      const { data: profile } = await supabase
+      // 2. Vérification stricte du rôle Super Admin
+      const { data: profile, error: profileError } = await supabase
         .from('restaurants')
         .select('is_super_admin')
         .eq('id', user.id)
         .single();
 
-      if (!profile?.is_super_admin) {
+      if (profileError || !profile?.is_super_admin) {
+        console.warn("Accès refusé : Vous n'êtes pas Super Admin");
         return router.replace('/dashboard');
       }
 
+      // 3. Si tout est OK, on charge les données
       await fetchData();
+      setAuthLoading(false);
+      
     } catch (err) {
       console.error("Erreur Master Admin:", err);
       router.replace('/dashboard');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -68,14 +79,13 @@ export default function MasterAdminPage() {
 
   const toggleStatus = async (restoId, currentStatus) => {
     try {
-      // Optimisme UI : on change l'état localement avant le retour serveur pour plus de fluidité
       const { error } = await supabase
         .from('restaurants')
         .update({ is_active: !currentStatus })
         .eq('id', restoId);
 
       if (error) throw error;
-      fetchData(); // Rafraîchissement complet
+      fetchData(); 
     } catch (err) {
       alert("Erreur lors de la modification du statut");
     }
@@ -83,11 +93,17 @@ export default function MasterAdminPage() {
 
   if (!mounted) return null;
 
-  if (loading) {
+  // --- ECRAN DE CHARGEMENT DE SÉCURITÉ (Anti-Hacker) ---
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center">
-        <Loader2 className="animate-spin text-[#00D9FF] mb-4" size={40} />
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 italic text-left">Accès sécurisé Master...</p>
+        <div className="relative">
+          <div className="absolute inset-0 bg-[#00D9FF] blur-3xl opacity-20 animate-pulse"></div>
+          <Loader2 className="animate-spin text-[#00D9FF] relative" size={40} />
+        </div>
+        <p className="mt-4 text-[10px] font-black uppercase tracking-[0.3em] text-white/40 italic">
+          Vérification des privilèges Master...
+        </p>
       </div>
     );
   }
@@ -97,7 +113,7 @@ export default function MasterAdminPage() {
       {/* HEADER */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6 text-left">
         <div className="text-left">
-          <div className="flex items-center gap-3 text-[#00D9FF] mb-2 text-left">
+          <div className="flex items-center gap-3 text-[#00D9FF] mb-2">
             <ShieldCheck size={24} />
             <span className="text-[10px] font-black uppercase tracking-[0.3em]">Master Control Center</span>
           </div>
@@ -119,7 +135,7 @@ export default function MasterAdminPage() {
       <div className="max-w-7xl mx-auto">
         <div className="bg-[#0a0a0a] border border-white/5 rounded-[45px] overflow-hidden shadow-2xl">
           <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
-            <h3 className="text-xl font-black italic tracking-tighter uppercase">Portefeuille Clients</h3>
+            <h3 className="text-xl font-black italic tracking-tighter uppercase text-left">Portefeuille Clients</h3>
             <div className="flex items-center gap-2 text-[10px] font-bold opacity-40 uppercase tracking-widest">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Synchronisation Live
             </div>
