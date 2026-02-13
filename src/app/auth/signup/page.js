@@ -12,54 +12,50 @@ export default function SignupPage() {
   const [formData, setFormData] = useState({ email: '', password: '', restoName: '' });
   const router = useRouter();
 
-  const handleSignup = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    
-    try {
-      // 1. Inscription dans Supabase Auth
-      const { data, error: authError } = await supabase.auth.signUp({
+const handleSignup = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  
+  try {
+    const { data, error: authError } = await supabase.auth.signUp({
+      email: formData.email,
+      password: formData.password,
+    });
+
+    if (authError) throw authError;
+
+    if (data?.user) {
+      // 1. On crée d'abord le restaurant
+      const { error: dbError } = await supabase
+        .from('restaurants')
+        .insert([{ 
+          id: data.user.id, 
+          name: formData.restoName,
+          owner_email: formData.email,
+          is_active: false,
+          is_super_admin: false 
+        }]);
+
+      if (dbError) throw dbError;
+
+      // 2. ATTENDRE 1 SECONDE (Le temps que la DB propage l'info)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // 3. Connecter l'utilisateur manuellement pour être sûr
+      await supabase.auth.signInWithPassword({
         email: formData.email,
-        password: formData.password,
+        password: formData.password
       });
 
-      if (authError) throw authError;
-
-      if (data?.user) {
-        // 2. CRUCIAL : Insertion manuelle dans la table 'restaurants'
-        // Cela garantit que le profil existe même si le trigger SQL tarde
-        const { error: dbError } = await supabase
-          .from('restaurants')
-          .insert([
-            { 
-              id: data.user.id, 
-              name: formData.restoName,
-              owner_email: formData.email,
-              is_active: false, // Compte suspendu par défaut pour validation
-              is_super_admin: false 
-            }
-          ]);
-
-        if (dbError) {
-          console.error("Erreur création profil:", dbError.message);
-        }
-
-        // 3. Redirection intelligente
-        if (data.session) {
-          // Si l'email confirmation est désactivé, on entre direct
-          router.replace('/dashboard');
-        } else {
-          // Sinon on demande de vérifier les mails
-          alert("Inscription réussie ! Vérifiez vos emails pour confirmer votre compte ou connectez-vous.");
-          router.push('/auth/login');
-        }
-      }
-    } catch (err) {
-      alert("Erreur : " + err.message);
-    } finally {
-      setLoading(false);
+      // 4. Rediriger
+      router.replace('/dashboard');
     }
-  };
+  } catch (err) {
+    alert("Erreur : " + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-[family-name:var(--font-lexend)] flex items-center justify-center p-6">
