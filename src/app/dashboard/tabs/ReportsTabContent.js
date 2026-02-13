@@ -28,7 +28,7 @@ export default function ReportsTabContent({ isDarkMode }) {
     fetchReportData();
   }, [period]);
 
-  const fetchReportData = async () => {
+ const fetchReportData = async () => {
     try {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -37,43 +37,48 @@ export default function ReportsTabContent({ isDarkMode }) {
       const now = new Date();
       let startStr;
 
-      // Calcul de la période
+      // --- LOGIQUE DE PÉRIODE (Corrigée pour ne pas muter 'now') ---
       if (period === 'journalier') {
-        startStr = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+        const today = new Date();
+        startStr = new Date(today.setHours(0, 0, 0, 0)).toISOString();
       } else if (period === 'hebdomadaire') {
-        const lastWeek = new Date(now.setDate(now.getDate() - 7));
+        const lastWeek = new Date();
+        lastWeek.setDate(lastWeek.getDate() - 7);
         startStr = lastWeek.toISOString();
       } else { // mensuel
         startStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       }
 
-      // Requêtes parallèles pour les transactions et dépenses
+      // --- REQUÊTES PARALLÈLES SÉCURISÉES ---
       const [transRes, expRes] = await Promise.all([
         supabase.from('transactions')
           .select('*')
-          .eq('restaurant_id', user.id)
+          .eq('restaurant_id', user.id) // ISOLATION
           .gte('created_at', startStr),
         supabase.from('expenses')
           .select('*')
-          .eq('restaurant_id', user.id)
+          .eq('restaurant_id', user.id) // ISOLATION
           .gte('created_at', startStr)
       ]);
+
+      if (transRes.error) throw transRes.error;
+      if (expRes.error) throw expRes.error;
 
       const transactions = transRes.data || [];
       const expenses = expRes.data || [];
 
       // --- CALCULS DES STATS ---
-      const totalRecettes = transactions.reduce((acc, curr) => acc + (curr.amount || 0), 0);
-      const totalAchats = expenses.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+      const totalRecettes = transactions.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+      const totalAchats = expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
       
       const cashOnly = transactions
         .filter(t => !t.payment_method || t.payment_method === 'Espèces')
-        .reduce((acc, curr) => acc + curr.amount, 0);
+        .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       // --- RÉPARTITION PAIEMENTS ---
       const methods = transactions.reduce((acc, curr) => {
         const m = curr.payment_method || 'Espèces';
-        acc[m] = (acc[m] || 0) + curr.amount;
+        acc[m] = (acc[m] || 0) + (Number(curr.amount) || 0);
         return acc;
       }, {});
 
@@ -91,8 +96,7 @@ export default function ReportsTabContent({ isDarkMode }) {
         color: colors[name] || '#8884d8'
       }));
 
-      // --- LOGIQUE DE COMPARAISON (Simplifiée par segments) ---
-      // Note: Pour un vrai graphique temporel, on pourrait grouper par jour précis
+      // --- LOGIQUE DE COMPARAISON ---
       const comparisonData = [
         { name: 'Ventes', recettes: totalRecettes, achats: 0 },
         { name: 'Dépenses', recettes: 0, achats: totalAchats }
@@ -102,13 +106,13 @@ export default function ReportsTabContent({ isDarkMode }) {
         recettes: totalRecettes,
         achats: totalAchats,
         cash: cashOnly,
-        virtuel: totalRecettes - cashOnly,
+        virtuel: Math.max(0, totalRecettes - cashOnly), // Évite les chiffres négatifs bizarres
         comparison: comparisonData,
         paymentDistribution: paymentDist
       });
 
     } catch (err) {
-      console.error("Erreur rapports:", err);
+      console.error("Erreur rapports:", err.message);
     } finally {
       setLoading(false);
     }

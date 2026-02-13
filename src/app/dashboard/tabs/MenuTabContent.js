@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, AlertCircle, X, ShoppingBag, Check, Minus } from 'lucide-react';
@@ -14,7 +14,7 @@ export default function MenuTabContent({ isDarkMode, cart, setCart, setActiveTab
   const [editingItem, setEditingItem] = useState(null);
   const [itemToDelete, setItemToDelete] = useState(null);
   
-  // États pour la prise de commande (Initialisés avec la mémoire si elle existe)
+  // États pour la prise de commande
   const [orderType, setOrderType] = useState(pendingOrder?.order_type || "Sur place");
   const [tableNum, setTableNum] = useState(pendingOrder?.table_number || "");
 
@@ -26,13 +26,25 @@ export default function MenuTabContent({ isDarkMode, cart, setCart, setActiveTab
     }
   }, [pendingOrder]);
 
+  // --- 1. LECTURE FILTRÉE PAR USER_ID ---
   const fetchDishes = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('dishes').select('*').order('created_at', { ascending: false });
+      const { data: { user } } = await supabase.auth.getUser(); // Récupération user
+      
+      const { data, error } = await supabase
+        .from('dishes')
+        .select('*')
+        .eq('restaurant_id', user.id) // FILTRE CRITIQUE
+        .order('created_at', { ascending: false });
+      
       if (error) throw error;
       setItems(data || []);
-    } catch (error) { console.error('Erreur:', error.message); } finally { setLoading(false); }
+    } catch (error) { 
+      console.error('Erreur:', error.message); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const addToCart = (dish) => {
@@ -43,58 +55,88 @@ export default function MenuTabContent({ isDarkMode, cart, setCart, setActiveTab
     setCart(prev => prev.filter(item => item.cartId !== cartId));
   };
 
+  // --- 2. FINALISATION COMMANDE AVEC USER_ID ---
   const finalizeOrder = async () => {
     if (orderType === "Sur place" && !tableNum) return alert("Précisez le numéro de table.");
     const total = cart.reduce((acc, curr) => acc + curr.price, 0);
+    
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+
       const { error } = await supabase.from('orders').insert([{
+        restaurant_id: user.id, // INJECTION USER_ID
         table_number: orderType === "Emporter" ? "Emporter" : `Table ${tableNum}`,
         items_summary: cart.map(item => item.name).join(", "),
         items_details: cart,
         total_amount: total,
         status: "En cours"
       }]);
+      
       if (error) throw error;
       
-      // Reset après succès
       setCart([]);
       setPendingOrder(null); 
       setActiveTab("orders");
-    } catch (error) { alert("Erreur: " + error.message); }
+    } catch (error) { 
+      alert("Erreur: " + error.message); 
+    }
   };
 
+  // --- 3. SAUVEGARDE PLAT AVEC USER_ID ---
   const handleSaveDish = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const dishData = {
-      name: formData.get('name'),
-      price: parseInt(formData.get('price')),
-      category: formData.get('category'),
-      image_url: formData.get('image'),
-      status: 'Disponible'
-    };
+    
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const dishData = {
+        restaurant_id: user.id, // INJECTION USER_ID
+        name: formData.get('name'),
+        price: parseInt(formData.get('price')),
+        category: formData.get('category'),
+        image_url: formData.get('image'),
+        status: 'Disponible'
+      };
+
       if (editingItem?.id) {
-        await supabase.from('dishes').update(dishData).eq('id', editingItem.id);
+        // Update filtré par ID et UserID (Double sécurité)
+        await supabase
+          .from('dishes')
+          .update(dishData)
+          .eq('id', editingItem.id)
+          .eq('restaurant_id', user.id);
       } else {
         await supabase.from('dishes').insert([dishData]);
       }
+      
       setIsModalOpen(false);
       fetchDishes();
-    } catch (error) { alert("Erreur sauvegarde"); }
+    } catch (error) { 
+      alert("Erreur sauvegarde"); 
+    }
   };
 
   const confirmDeleteDish = async () => {
     try {
-      await supabase.from('dishes').delete().eq('id', itemToDelete.id);
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      await supabase
+        .from('dishes')
+        .delete()
+        .eq('id', itemToDelete.id)
+        .eq('restaurant_id', user.id); // SÉCURITÉ : On ne supprime que chez soi
+        
       setIsDeleteModalOpen(false);
       fetchDishes();
-    } catch (error) { alert("Erreur suppression"); }
+    } catch (error) { 
+      alert("Erreur suppression"); 
+    }
   };
 
+  // ... (Le reste du JSX reste identique à ton code initial)
   return (
     <div className="flex h-[calc(100vh-120px)] gap-6 overflow-hidden no-print">
-      
       {/* --- PANIER PERMANENT (GAUCHE) --- */}
       <div className={`w-80 flex flex-col rounded-[40px] border transition-all ${isDarkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-gray-100 shadow-xl'}`}>
         <div className="p-6 border-b border-white/5 text-left">
@@ -190,7 +232,8 @@ export default function MenuTabContent({ isDarkMode, cart, setCart, setActiveTab
           ))}
         </div>
       </div>
-{/* --- MODALE AJOUT/EDIT PLAT --- */}
+
+      {/* MODALES (Identiques mais appellent les fonctions sécurisées) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 backdrop-blur-xl bg-black/60">
           <form onSubmit={handleSaveDish} className={`w-full max-w-lg rounded-[45px] p-10 border shadow-2xl ${isDarkMode ? 'bg-[#0a0a0a] border-white/10' : 'bg-white border-gray-100'}`}>
@@ -229,7 +272,7 @@ export default function MenuTabContent({ isDarkMode, cart, setCart, setActiveTab
         </div>
       )}
 
-      {/* --- MODALE SUPPRESSION PLAT --- */}
+      {/* MODALE SUPPRESSION PLAT */}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 backdrop-blur-md bg-black/40">
           <div className={`w-full max-w-sm rounded-[40px] p-8 border shadow-2xl ${isDarkMode ? 'bg-[#0f0f0f] border-white/10' : 'bg-white border-gray-200'}`}>
@@ -248,13 +291,3 @@ export default function MenuTabContent({ isDarkMode, cart, setCart, setActiveTab
     </div>
   );
 }
-      
-  
- 
- 
- 
- 
- 
- 
- 
- 

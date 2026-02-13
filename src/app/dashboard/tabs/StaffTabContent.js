@@ -18,12 +18,18 @@ export default function StaffTabContent({ isDarkMode }) {
     fetchStaff();
   }, []);
 
+// --- CHARGEMENT DU PERSONNEL (SÉCURISÉ) ---
   const fetchStaff = async () => {
     try {
       setLoading(true);
+      // 1. Récupérer l'ID du restaurant connecté
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 2. Filtrer la lecture par restaurant_id
       const { data, error } = await supabase
         .from('staff')
         .select('*')
+        .eq('restaurant_id', user.id) // FILTRE D'ISOLATION
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -35,18 +41,26 @@ export default function StaffTabContent({ isDarkMode }) {
     }
   };
 
-  // --- SUPPRESSION D'UN MEMBRE ---
+  // --- SUPPRESSION D'UN MEMBRE (SÉCURISÉ) ---
   const handleDeleteMember = async (id, name) => {
     if (window.confirm(`Voulez-vous vraiment retirer ${name} de l'équipe ?`)) {
-      const { error } = await supabase
-        .from('staff')
-        .delete()
-        .eq('id', id);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
 
-      if (!error) {
-        setStaff(staff.filter(member => member.id !== id));
-      } else {
-        alert("Erreur lors de la suppression");
+        // Sécurité double : on vérifie l'ID du membre ET l'ID du restaurant
+        const { error } = await supabase
+          .from('staff')
+          .delete()
+          .eq('id', id)
+          .eq('restaurant_id', user.id); // EMPÊCHE DE SUPPRIMER LE STAFF D'AUTRUI
+
+        if (!error) {
+          setStaff(staff.filter(member => member.id !== id));
+        } else {
+          throw error;
+        }
+      } catch (error) {
+        alert("Erreur lors de la suppression : " + error.message);
       }
     }
   };

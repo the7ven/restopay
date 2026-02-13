@@ -37,7 +37,7 @@ export default function MasterAdminPage() {
         .from('restaurants')
         .select('is_super_admin')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       if (!profile?.is_super_admin) {
         return router.replace('/dashboard');
@@ -51,16 +51,25 @@ export default function MasterAdminPage() {
   };
 
   const fetchData = async () => {
-    const [restosRes, transRes] = await Promise.all([
-      supabase.from('restaurants').select('*').order('created_at', { ascending: false }),
-      supabase.from('transactions').select('amount')
-    ]);
+    // On force la récupération de TOUTES les colonnes pour être sûr
+    const { data: restos, error } = await supabase
+      .from('restaurants')
+      .select('*') 
+      .order('created_at', { ascending: false });
 
-    const totalCA = transRes.data?.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0) || 0;
+    if (error) {
+      console.error("Erreur de récupération master:", error.message);
+      return;
+    }
 
-    setRestaurants(restosRes.data || []);
+    // On calcule les stats sur la totalité
+    const { data: transData } = await supabase.from('transactions').select('amount');
+    const totalCA = transData?.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0) || 0;
+
+    console.log("Restaurants trouvés :", restos.length); // Regarde dans ta console F12
+    setRestaurants(restos || []);
     setStats({
-      totalRestos: restosRes.data?.length || 0,
+      totalRestos: restos?.length || 0,
       totalSales: totalCA
     });
   };

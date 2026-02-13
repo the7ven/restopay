@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-// AJOUT DE LA PROP selectedDate (format YYYY-MM-DD venant du parent)
 export default function OrdersTabContent({
   isDarkMode,
   setActiveTab,
@@ -38,7 +37,6 @@ export default function OrdersTabContent({
 
   useEffect(() => {
     fetchOrders();
-    // On écoute toujours les changements, mais on filtre par date dans fetchOrders
     const subscription = supabase
       .channel("orders_live")
       .on(
@@ -50,21 +48,22 @@ export default function OrdersTabContent({
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [selectedDate]); // SE RECHARGE LORSQUE LA DATE DU CALENDRIER CHANGE
+  }, [selectedDate]);
 
   const fetchOrders = async () => {
     try {
       setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
 
-      // LOGIQUE DE FILTRAGE PAR DATE
       const startOfDay = `${selectedDate}T00:00:00.000Z`;
       const endOfDay = `${selectedDate}T23:59:59.999Z`;
 
       const { data, error } = await supabase
         .from("orders")
         .select("*")
-        .gte("created_at", startOfDay) // Plus grand ou égal au début du jour
-        .lte("created_at", endOfDay) // Plus petit ou égal à la fin du jour
+        .eq("restaurant_id", user.id) // FILTRE RESTAURANT
+        .gte("created_at", startOfDay)
+        .lte("created_at", endOfDay)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -78,6 +77,7 @@ export default function OrdersTabContent({
 
   const handleEditOrder = async (order) => {
     if (order.items_details) {
+      const { data: { user } } = await supabase.auth.getUser();
       setCart(order.items_details);
       const tableValue = order.table_number?.includes("Table")
         ? order.table_number.replace("Table ", "")
@@ -92,7 +92,8 @@ export default function OrdersTabContent({
       const { error } = await supabase
         .from("orders")
         .delete()
-        .eq("id", order.id);
+        .eq("id", order.id)
+        .eq("restaurant_id", user.id); // SÉCURITÉ SUPPLÉMENTAIRE
       if (!error) setActiveTab("menu");
     } else {
       alert("Détails manquants.");
@@ -102,12 +103,15 @@ export default function OrdersTabContent({
   const handleUpdateStatus = async (order) => {
     if (order.status === "Servi") return;
 
-    if (order.status === "Prêt") {
-      try {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (order.status === "Prêt") {
         const { error: transError } = await supabase
           .from("transactions")
           .insert([
             {
+              restaurant_id: user.id, // INJECTION ID
               table_number: order.table_number,
               amount: order.total_amount,
               payment_method: "Espèces",
@@ -121,28 +125,37 @@ export default function OrdersTabContent({
         const { error: orderError } = await supabase
           .from("orders")
           .update({ status: "Servi" })
-          .eq("id", order.id);
+          .eq("id", order.id)
+          .eq("restaurant_id", user.id); // FILTRE RESTAURANT
 
         if (orderError) throw orderError;
 
         alert(`Commande ${order.table_number} encaissée avec succès !`);
-      } catch (err) {
-        alert("Erreur lors de l'encaissement : " + err.message);
+      } else {
+        await supabase
+          .from("orders")
+          .update({ status: "Prêt" })
+          .eq("id", order.id)
+          .eq("restaurant_id", user.id); // FILTRE RESTAURANT
       }
-    } else {
-      await supabase
-        .from("orders")
-        .update({ status: "Prêt" })
-        .eq("id", order.id);
+      fetchOrders();
+    } catch (err) {
+      alert("Erreur : " + err.message);
     }
   };
 
   const handleDeleteOrder = async () => {
-    await supabase.from("orders").delete().eq("id", orderToDelete.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase
+      .from("orders")
+      .delete()
+      .eq("id", orderToDelete.id)
+      .eq("restaurant_id", user.id); // FILTRE RESTAURANT
     setIsDeleteModalOpen(false);
     fetchOrders();
   };
 
+  // ... (Reste du code JSX,QuickStat, etc. inchangé)
   const statusColors = {
     "En cours": isDarkMode
       ? "text-orange-400 bg-orange-400/10 border-orange-400/20"
@@ -287,7 +300,6 @@ export default function OrdersTabContent({
         )}
       </div>
 
-      {/* --- MODALE FACTURE THERMIQUE --- */}
       {selectedOrderForBill && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 backdrop-blur-md bg-black/60 no-print">
           <div className="w-full max-w-sm fade-in">
@@ -397,6 +409,7 @@ export default function OrdersTabContent({
         </div>
       )}
 
+      {/* Modal suppression + Styles Print + QuickStat (Gardés identiques) */}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 backdrop-blur-md bg-black/40 no-print text-center">
           <div
@@ -472,7 +485,7 @@ function QuickStat({ isDarkMode, label, value, icon }) {
       >
         {icon}
       </div>
-      <div className="text-left text-left">
+      <div className="text-left">
         <p className="text-[9px] uppercase tracking-widest opacity-40 font-black text-left">
           {label}
         </p>

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  TrendingUp, Download, Grid, ArrowRight, Star, Trophy, Award, Medal, ChevronDown, ChevronUp, Loader2, Calendar
+  TrendingUp, Download, Grid, ArrowRight, Star, Trophy, Award, Medal, ChevronDown, ChevronUp, Loader2, Calendar,
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, 
@@ -23,9 +23,13 @@ export default function HistoryTabContent({ isDarkMode, selectedDate }) {
     fetchHistory();
   }, [selectedDate, timeFilter]);
 
-  const fetchHistory = async () => {
+ const fetchHistory = async () => {
     try {
       setLoading(true);
+      
+      // --- 1. RÉCUPÉRATION DE L'ID DU RESTAURANT ---
+      const { data: { user } } = await supabase.auth.getUser();
+
       const date = new Date(selectedDate);
       let startDate, endDate;
 
@@ -38,13 +42,16 @@ export default function HistoryTabContent({ isDarkMode, selectedDate }) {
         startDate = new Date(date.setDate(first)).toISOString();
         endDate = new Date(date.setDate(first + 6)).toISOString();
       } else {
+        // Attention : assure-toi que currentYear et currentMonth sont définis dans ton composant
         startDate = new Date(currentYear, currentMonth, 1).toISOString();
         endDate = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59).toISOString();
       }
 
+      // --- 2. REQUÊTE SÉCURISÉE AVEC ISOLATION ---
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
+        .eq('restaurant_id', user.id) // FILTRE CRITIQUE : Seules mes transactions
         .gte('created_at', startDate)
         .lte('created_at', endDate)
         .order('created_at', { ascending: false });
@@ -71,29 +78,27 @@ export default function HistoryTabContent({ isDarkMode, selectedDate }) {
           date: `${i}h00`,
           total: total.toLocaleString() + " F",
           rawTotal: total,
+          // occupancy : calcul basé uniquement sur les transactions du restaurant
           occupancy: Math.min(Math.round((hourTrans.length / 10) * 100), 100),
           label: `${i}h`
         };
       });
     }
+    
     // Par défaut (semaine/mois), groupage par jour
     const uniqueDays = [...new Set(data.map(t => t.created_at.split('T')[0]))];
-    return uniqueDays.map(date => {
-      const dayTrans = data.filter(t => t.created_at.startsWith(date));
+    return uniqueDays.map(dateStr => {
+      const dayTrans = data.filter(t => t.created_at.startsWith(dateStr));
       const total = dayTrans.reduce((acc, curr) => acc + Number(curr.amount), 0);
       return {
-        date: new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+        date: new Date(dateStr).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
         total: total.toLocaleString() + " F",
         rawTotal: total,
         occupancy: Math.min(Math.round((dayTrans.length / 30) * 100), 100),
-        label: date.split('-')[2]
+        label: dateStr.split('-')[2]
       };
     });
   };
-
-  const chartData = useMemo(() => [...monthlyData].reverse(), [monthlyData]);
-  const displayedHistory = showAllDays ? monthlyData : monthlyData.slice(0, 5);
-
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-40 opacity-30">
       <Loader2 className="animate-spin mb-4 text-[#00D9FF]" size={40} />

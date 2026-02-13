@@ -37,8 +37,19 @@ export default function TablesTabContent({ isDarkMode, setActiveTab, setPendingO
   const fetchData = async () => {
     try {
       setLoading(true);
-      const { data: tablesData, error: tableError } = await supabase.from('restaurant_tables').select('*');
-      const { data: ordersData } = await supabase.from('orders').select('*').neq('status', 'Servi');
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Filtrage par restaurant_id
+      const { data: tablesData, error: tableError } = await supabase
+        .from('restaurant_tables')
+        .select('*')
+        .eq('restaurant_id', user.id);
+
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('restaurant_id', user.id)
+        .neq('status', 'Servi');
       
       if (tableError) throw tableError;
       
@@ -59,8 +70,11 @@ export default function TablesTabContent({ isDarkMode, setActiveTab, setPendingO
   const handleFinalizeTable = async (method) => {
     const order = selectedOrderForBill;
     try {
-      // 1. Enregistrement transaction
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 1. Enregistrement transaction avec restaurant_id
       const { error: transError } = await supabase.from('transactions').insert([{
+        restaurant_id: user.id,
         table_number: order.table_number,
         amount: order.total_amount,
         payment_method: method,
@@ -84,9 +98,16 @@ export default function TablesTabContent({ isDarkMode, setActiveTab, setPendingO
     const tableName = e.target.tableName.value;
     const capacity = parseInt(e.target.capacity.value);
     
+    const { data: { user } } = await supabase.auth.getUser();
+
     const { error } = await supabase
       .from('restaurant_tables')
-      .insert([{ table_name: tableName, capacity: capacity, status: 'Libre' }]);
+      .insert([{ 
+        restaurant_id: user.id,
+        table_name: tableName, 
+        capacity: capacity, 
+        status: 'Libre' 
+      }]);
 
     if (error) {
       alert("Erreur lors de la création : " + error.message);

@@ -33,14 +33,14 @@ export default function SettingsTabContent({ isDarkMode }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // LECTURE : On récupère uniquement les infos liées à l'ID de l'utilisateur
       const { data, error } = await supabase
         .from("restaurants")
         .select("name, location, logo_url")
-        .eq("id", user.id)
+        .eq("id", user.id) // ISOLATION SÉCURISÉE
         .single();
 
       if (data) {
-        // On met à jour l'état de manière atomique
         setSettings(prev => ({
           ...prev,
           name: data.name || "",
@@ -61,25 +61,20 @@ export default function SettingsTabContent({ isDarkMode }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Étape 1 : Mise à jour dans Supabase
+      // MISE À JOUR : On verrouille la modification sur l'ID de l'utilisateur
       const { error } = await supabase
         .from('restaurants')
         .update({
           name: settings.name,
           location: settings.location
         })
-        .eq('id', user.id);
+        .eq('id', user.id); // SÉCURITÉ CRITIQUE
 
       if (error) throw error;
 
-      // Étape 2 : Succès
       setSaveSuccess(true);
-      
-      // On rafraîchit les composants serveurs de Next.js
       router.refresh(); 
 
-      // Étape 3 : On force une synchronisation locale après un court délai
-      // pour s'assurer que fetchSettings récupère bien la donnée persistée
       setTimeout(() => {
         setSaveSuccess(false);
         fetchSettings(); 
@@ -101,6 +96,7 @@ export default function SettingsTabContent({ isDarkMode }) {
 
       if (!file || !user) return;
 
+      // Organisation du stockage par ID utilisateur pour éviter les conflits
       const fileExt = file.name.split('.').pop();
       const filePath = `${user.id}/logo-${Date.now()}.${fileExt}`;
 
@@ -114,10 +110,11 @@ export default function SettingsTabContent({ isDarkMode }) {
         .from('logos')
         .getPublicUrl(filePath);
 
+      // Mise à jour de l'URL du logo dans la table restaurant
       await supabase
         .from('restaurants')
         .update({ logo_url: publicUrl })
-        .eq('id', user.id);
+        .eq('id', user.id); // SÉCURITÉ CRITIQUE
 
       setSettings(prev => ({ ...prev, logo_url: publicUrl }));
       alert("Logo mis à jour !");
@@ -132,8 +129,8 @@ export default function SettingsTabContent({ isDarkMode }) {
     return (
       <div className="h-96 flex flex-col items-center justify-center">
         <Loader2 className="animate-spin text-[#00D9FF] mb-4" size={40} />
-        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 italic text-left">
-          Synchronisation des données...
+        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 italic">
+          Synchronisation des paramètres...
         </p>
       </div>
     );
@@ -146,7 +143,7 @@ export default function SettingsTabContent({ isDarkMode }) {
           <h3 className="text-3xl font-black italic tracking-tighter uppercase">
             Paramètres Système
           </h3>
-          <p className="opacity-50 text-sm font-light uppercase tracking-widest text-left">
+          <p className="opacity-50 text-sm font-light uppercase tracking-widest">
             Configuration globale de votre établissement
           </p>
         </div>
@@ -170,7 +167,7 @@ export default function SettingsTabContent({ isDarkMode }) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-4 text-left">
-                <label className="text-[10px] uppercase tracking-widest font-black opacity-40 ml-4 block text-left">Nom du Restaurant</label>
+                <label className="text-[10px] uppercase tracking-widest font-black opacity-40 ml-4 block">Nom du Restaurant</label>
                 <input
                   type="text"
                   value={settings.name}
@@ -179,14 +176,14 @@ export default function SettingsTabContent({ isDarkMode }) {
                 />
               </div>
               <div className="space-y-4 text-left">
-                <label className="text-[10px] uppercase tracking-widest font-black opacity-40 ml-4 block text-left">Localisation</label>
+                <label className="text-[10px] uppercase tracking-widest font-black opacity-40 ml-4 block">Localisation</label>
                 <div className="relative">
                   <MapPin size={16} className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30" />
                   <input
                     type="text"
                     value={settings.location}
                     onChange={(e) => setSettings({ ...settings, location: e.target.value })}
-                    placeholder="Abidjan, Côte d'Ivoire"
+                    placeholder="Douala, Cameroun"
                     className={`w-full pl-14 pr-6 py-4 rounded-2xl border outline-none ${isDarkMode ? "bg-white/5 border-white/10 focus:border-[#00D9FF]" : "bg-gray-50 border-gray-100 focus:border-[#00D9FF]"}`}
                   />
                 </div>
@@ -210,6 +207,28 @@ export default function SettingsTabContent({ isDarkMode }) {
                 </label>
               </div>
             </div>
+          </div>
+
+          {/* Section Options (Monnaie, TVA, etc.) */}
+          <div className={`p-8 rounded-[45px] border ${isDarkMode ? "bg-[#0a0a0a] border-white/5" : "bg-white border-gray-100 shadow-sm"}`}>
+             <h4 className="text-lg font-black flex items-center gap-3 mb-8 uppercase tracking-tighter italic">
+              <Database size={20} className="text-[#00D9FF]" /> Configuration Locale
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <SettingToggle label="Devise de la caisse" value={settings.currency} isDarkMode={isDarkMode} />
+              <SettingToggle label="Taux TVA" value={settings.tva} isDarkMode={isDarkMode} />
+            </div>
+          </div>
+        </div>
+
+        {/* Section Sécurité/Info */}
+        <div className="space-y-6 text-left">
+           <div className={`p-8 rounded-[40px] border ${isDarkMode ? "bg-[#00D9FF]/5 border-[#00D9FF]/20" : "bg-cyan-50 border-cyan-100"}`}>
+            <Shield size={32} className="text-[#00D9FF] mb-4" />
+            <h4 className="font-black text-sm uppercase mb-2">Protection des données</h4>
+            <p className="text-xs opacity-60 leading-relaxed font-medium">
+              Toutes vos modifications sont chiffrées et isolées. Seul votre établissement a accès à ces configurations via votre jeton sécurisé.
+            </p>
           </div>
         </div>
       </div>
