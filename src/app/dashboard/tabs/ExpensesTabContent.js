@@ -15,6 +15,7 @@ export default function ExpensesTabContent({ isDarkMode, selectedDate, userProfi
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [totalExpenses, setTotalExpenses] = useState(0);
   const [period, setPeriod] = useState("day"); // Nouvel état pour la période
 
@@ -42,6 +43,9 @@ export default function ExpensesTabContent({ isDarkMode, selectedDate, userProfi
 
   const handleAddExpense = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
     const formData = new FormData(e.target);
     try {
       if (!userProfile) throw new Error("Profil utilisateur non chargé");
@@ -65,6 +69,8 @@ export default function ExpensesTabContent({ isDarkMode, selectedDate, userProfi
     } catch (err) {
       console.error("Détails de l'erreur :", err);
       alert(toUserMessage(err, "Impossible d'enregistrer cette dépense."));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -170,8 +176,8 @@ export default function ExpensesTabContent({ isDarkMode, selectedDate, userProfi
                 <option>Autre</option>
               </select>
               <div style={{ display: "flex", gap: 14, paddingTop: 8 }}>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={{ flex: 1, fontWeight: 700, fontSize: 12, textTransform: "uppercase", border: "none", background: "none", cursor: "pointer", color: T.faint }}>Annuler</button>
-                <button type="submit" style={{ flex: 1, padding: "13px 0", background: T.bad, color: "#fff", borderRadius: radiusSm, fontWeight: 700, fontSize: 12, textTransform: "uppercase", border: "none", cursor: "pointer" }}>Enregistrer</button>
+                <button type="button" disabled={isSubmitting} onClick={() => setIsModalOpen(false)} style={{ flex: 1, fontWeight: 700, fontSize: 12, textTransform: "uppercase", border: "none", background: "none", cursor: isSubmitting ? "not-allowed" : "pointer", color: T.faint, opacity: isSubmitting ? 0.5 : 1 }}>Annuler</button>
+                <button type="submit" disabled={isSubmitting} aria-busy={isSubmitting} style={{ flex: 1, padding: "13px 0", background: T.bad, color: "#fff", borderRadius: radiusSm, fontWeight: 700, fontSize: 12, textTransform: "uppercase", border: "none", cursor: isSubmitting ? "not-allowed" : "pointer", opacity: isSubmitting ? 0.7 : 1 }}>{isSubmitting ? <Loader2 className="animate-spin" size={16} style={{ margin: "0 auto" }} /> : "Enregistrer"}</button>
               </div>
             </div>
           </form>
